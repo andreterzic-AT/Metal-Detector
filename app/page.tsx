@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react"
 import { motion, AnimatePresence } from "framer-motion"
-import { Send, Music, Mic, Search, Volume2, ExternalLink, Info, Settings } from "lucide-react"
+import { Send, Music, Mic, Search, Volume2, ExternalLink, Info, Settings, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
@@ -10,9 +10,10 @@ import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { bandDatabase, type BandInfo } from "@/lib/bands"
+import { calculateMatch, type Rating } from "@/lib/match"
+import { getCachedBandNames, lookupBand } from "@/lib/web-lookup"
 import {
   defaultProfile,
-  getPropertyLabel,
   loadProfile,
   profileSections,
   saveProfile,
@@ -26,8 +27,6 @@ type Message = {
   content: string
   timestamp: Date
 }
-
-type Rating = "green" | "yellow" | "red" | null
 
 const buttonStyle =
   "bg-gradient-to-r from-zinc-700 via-zinc-500 to-zinc-600 hover:from-zinc-600 hover:via-zinc-400 hover:to-zinc-500 text-black font-bold shadow-lg shadow-black/50"
@@ -89,7 +88,7 @@ export default function MetalDetectorPage() {
       id: "welcome",
       role: "assistant",
       content:
-        "Hey Kumpel! 🤘 Willkommen beim Metal Detector!\n\nIch bin dein persönlicher Musik-Guide mit intelligenter Profil-Analyse. Öffne die Einstellungen (Button unter der Ampel) und erstelle dein persönliches Musikprofil mit dem Bewertungssystem (0 = mag ich nicht, 5 = neutral, 10 = davon will ich viel).\n\nDann kannst du Bands suchen und ich sage dir genau, wie gut sie zu dir passen! 🎸",
+        "Hey Kumpel! 🤘 Willkommen beim Metal Detector!\n\nIch bin dein persönlicher Musik-Guide mit intelligenter Profil-Analyse. Öffne die Einstellungen (Button unter der Ampel) und erstelle dein persönliches Musikprofil mit dem Bewertungssystem (0 = mag ich nicht, 5 = neutral, 10 = davon will ich viel).\n\nDann kannst du nach jeder beliebigen Band suchen – ich hole mir die Infos aus dem Web (MusicBrainz & Wikipedia) und sage dir, wie gut sie zu dir passen! 🎸",
       timestamp: new Date(),
     },
   ])
@@ -101,12 +100,15 @@ export default function MetalDetectorPage() {
   const [profileLoaded, setProfileLoaded] = useState(false)
   const [scoreDetails, setScoreDetails] = useState<string>("")
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
+  const [isSearching, setIsSearching] = useState(false)
+  const [suggestions, setSuggestions] = useState<string[]>(Object.keys(bandDatabase))
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   // Profil beim Start vom Gerät laden …
   useEffect(() => {
     setUserProfile(loadProfile())
     setProfileLoaded(true)
+    setSuggestions((s) => [...new Set([...getCachedBandNames(), ...s])])
   }, [])
 
   // … und bei jeder Änderung speichern
@@ -125,96 +127,6 @@ export default function MetalDetectorPage() {
 
   const setProfileValue = (key: ProfileKey, value: number) => setUserProfile((p) => ({ ...p, [key]: value }))
 
-  const calculateMatch = (bandName: string) => {
-    const band = bandName.toLowerCase()
-
-    const bandInfo: BandInfo = bandDatabase[band] || {
-      genre: "unbekannt",
-      attitude: "neutral",
-      religion: "neutral",
-      themes: ["verschiedene themen"],
-      spotify: `https://open.spotify.com/search/${encodeURIComponent(bandName)}`,
-      description: "Band nicht in Datenbank - Profil-basierte Analyse nicht verfügbar",
-      lyricStyle: "variabel",
-      profile: {},
-    }
-
-    const profileKeys = Object.keys(bandInfo.profile) as ProfileKey[]
-
-    if (profileKeys.length === 0) {
-      return {
-        rating: null as Rating,
-        explanation: `**${bandName}**\n\nDiese Band ist noch nicht in meiner Datenbank. Ich kann keine detaillierte Profil-Analyse durchführen.`,
-        spotifyLink: bandInfo.spotify,
-        scoreBreakdown: "Keine Profildaten verfügbar",
-        matchPercentage: 0,
-      }
-    }
-
-    let totalScore = 0
-    let maxPossibleScore = 0
-    const strongMatches: string[] = []
-    const weakMatches: string[] = []
-
-    // Durchlaufe alle Profil-Eigenschaften
-    profileKeys.forEach((key) => {
-      const bandValue = bandInfo.profile[key]
-      const userValue = userProfile[key]
-
-      if (bandValue !== undefined && userValue !== undefined) {
-        // Differenz: 0 = perfekt, 10 = maximal unterschiedlich
-        const difference = Math.abs(bandValue - userValue)
-        totalScore += 10 - difference
-        maxPossibleScore += 10
-
-        if (difference <= 2 && (bandValue >= 7 || userValue >= 7)) {
-          strongMatches.push(`✅ ${getPropertyLabel(key)}: Band ${bandValue}/10, Du ${userValue}/10`)
-        } else if (difference >= 5 && (bandValue >= 7 || userValue >= 7)) {
-          weakMatches.push(`⚠️ ${getPropertyLabel(key)}: Band ${bandValue}/10, Du ${userValue}/10`)
-        }
-      }
-    })
-
-    const matchPercentage = maxPossibleScore > 0 ? Math.round((totalScore / maxPossibleScore) * 100) : 0
-
-    let finalRating: Rating
-    let ratingText: string
-
-    if (matchPercentage >= 80) {
-      finalRating = "green"
-      ratingText = `🟢 **PREMIUM-TREFFER!** (${matchPercentage}%)\n\nDiese Band passt hervorragend zu deinem Profil!`
-    } else if (matchPercentage >= 70) {
-      finalRating = "green"
-      ratingText = `🟢 **STARKE ÜBEREINSTIMMUNG!** (${matchPercentage}%)\n\nDiese Band passt sehr gut zu dir!`
-    } else if (matchPercentage >= 60) {
-      finalRating = "yellow"
-      ratingText = `🟡 **GUTE ÜBEREINSTIMMUNG** (${matchPercentage}%)\n\nEinige gute Matches, testweise anhören!`
-    } else if (matchPercentage >= 50) {
-      finalRating = "yellow"
-      ratingText = `🟡 **TESTWEISE ANHÖREN** (${matchPercentage}%)\n\nGemischtes Profil, könnte interessant sein.`
-    } else {
-      finalRating = "red"
-      ratingText = `🔴 **NICHT EMPFOHLEN** (${matchPercentage}%)\n\nZu viele Unterschiede zu deinem Profil.`
-    }
-
-    let explanation = `**${bandName}**\n${bandInfo.description}\n\n`
-    explanation += `📊 **Genre**: ${bandInfo.genre}${bandInfo.subgenre ? ` (${bandInfo.subgenre})` : ""}\n`
-    explanation += `🎭 **Stil**: ${bandInfo.lyricStyle}\n`
-    explanation += `🎯 **Themen**: ${bandInfo.themes.join(", ")}\n\n`
-    explanation += `${ratingText}\n\n`
-
-    if (strongMatches.length > 0) {
-      explanation += `**Stärkste Übereinstimmungen:**\n${strongMatches.slice(0, 5).join("\n")}\n\n`
-    }
-    if (weakMatches.length > 0) {
-      explanation += `**Größte Abweichungen:**\n${weakMatches.slice(0, 5).join("\n")}\n\n`
-    }
-
-    const scoreBreakdown = `**Match-Analyse:**\n${matchPercentage}% Übereinstimmung\n\nBasierend auf ${profileKeys.length} Profil-Eigenschaften`
-
-    return { rating: finalRating, explanation: explanation.trim(), spotifyLink: bandInfo.spotify, scoreBreakdown, matchPercentage }
-  }
-
   const handleSendMessage = () => {
     if (!input.trim()) return
 
@@ -231,7 +143,7 @@ export default function MetalDetectorPage() {
       } else if (lowerInput.includes("wie") || lowerInput.includes("funktioniert")) {
         addMessage(
           "assistant",
-          `Das System analysiert Bands anhand deines persönlichen Profils!\n\n📊 Du bewertest 50+ Eigenschaften von 0-10\n🎸 Jede Band hat ein eigenes Profil\n🎯 Ich vergleiche beide und berechne die Übereinstimmung\n\n🟢 80%+ = Premium-Treffer\n🟢 70-79% = Starke Übereinstimmung\n🟡 60-69% = Gute Übereinstimmung\n🟡 50-59% = Testweise anhören\n🔴 <50% = Nicht empfohlen`
+          `Das System analysiert Bands anhand deines persönlichen Profils!\n\n📊 Du bewertest 50+ Eigenschaften von 0-10\n🌍 Ich hole Genres & Themen der Band aus dem Web und schätze daraus ihr Profil\n🎯 Ich vergleiche beide und berechne die Übereinstimmung\n\n🟢 80%+ = Premium-Treffer\n🟢 70-79% = Starke Übereinstimmung\n🟡 60-69% = Gute Übereinstimmung\n🟡 50-59% = Testweise anhören\n🔴 <50% = Nicht empfohlen`
         )
       } else {
         const responses = [
@@ -244,18 +156,59 @@ export default function MetalDetectorPage() {
     }, 500)
   }
 
-  const handleBandSearch = () => {
-    const name = bandSearch.trim()
-    if (!name) return
-
+  const showAnalysis = (name: string, info: BandInfo) => {
+    const analysis = calculateMatch(name, info, userProfile)
     setCurrentBand(name)
-    const analysis = calculateMatch(name)
     setRating(analysis.rating)
     setScoreDetails(analysis.scoreBreakdown)
 
-    setTimeout(() => {
-      addMessage("assistant", `${analysis.explanation}\n\n${analysis.scoreBreakdown}\n\n[🎧 Auf Spotify anhören](${analysis.spotifyLink})`)
-    }, 300)
+    let links = `[🎧 Auf Spotify anhören](${analysis.spotifyLink})`
+    if (info.source?.wikipedia) links += `\n[📖 Wikipedia](${info.source.wikipedia})`
+    if (info.source) links += `\n[🗂️ MusicBrainz](${info.source.musicbrainz})`
+    addMessage("assistant", `${analysis.explanation}\n\n${analysis.scoreBreakdown}\n\n${links}`)
+  }
+
+  const handleBandSearch = async () => {
+    const name = bandSearch.trim()
+    if (!name || isSearching) return
+
+    setIsSearching(true)
+    setCurrentBand(name)
+    setRating(null)
+    setScoreDetails("")
+    addMessage("user", `🔍 ${name}`)
+
+    try {
+      const result = await lookupBand(name)
+      const local = bandDatabase[name.toLowerCase()]
+
+      if (result.status === "found") {
+        const display = result.band.name || name
+        showAnalysis(display, result.band)
+        setSuggestions((s) => [...new Set([display, ...s])])
+      } else if (local) {
+        // Kein Internet oder nichts gefunden → eingebaute Liste
+        addMessage(
+          "assistant",
+          result.status === "error"
+            ? "📡 Keine Verbindung zum Web – ich nutze meine eingebaute Liste."
+            : "Im Web nichts gefunden – ich nutze meine eingebaute Liste."
+        )
+        showAnalysis(name, local)
+      } else if (result.status === "error") {
+        addMessage(
+          "assistant",
+          `📡 Ich konnte das Web gerade nicht erreichen (${result.message}). Prüf deine Internetverbindung und versuch es nochmal.`
+        )
+      } else {
+        addMessage(
+          "assistant",
+          `**${name}**\n\nDiese Band habe ich im Web nicht gefunden. Prüf die Schreibweise oder versuch den englischen Namen.\n\n[🎧 Auf Spotify suchen](https://open.spotify.com/search/${encodeURIComponent(name)})`
+        )
+      }
+    } finally {
+      setIsSearching(false)
+    }
   }
 
   const getRatingText = (r: Rating) => {
@@ -310,12 +263,12 @@ export default function MetalDetectorPage() {
                   className={inputStyle}
                 />
                 <datalist id="known-bands">
-                  {Object.keys(bandDatabase).map((b) => (
+                  {suggestions.map((b) => (
                     <option key={b} value={b} />
                   ))}
                 </datalist>
-                <Button onClick={handleBandSearch} className={buttonStyle} aria-label="Band suchen">
-                  <Search className="w-5 h-5" />
+                <Button onClick={handleBandSearch} disabled={isSearching} className={buttonStyle} aria-label="Band suchen">
+                  {isSearching ? <Loader2 className="w-5 h-5 animate-spin" /> : <Search className="w-5 h-5" />}
                 </Button>
               </div>
               {currentBand && (
@@ -385,6 +338,12 @@ export default function MetalDetectorPage() {
                   </motion.div>
                 ))}
               </AnimatePresence>
+              {isSearching && (
+                <div className="flex items-center gap-2 text-sm text-zinc-400">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Suche im Web (MusicBrainz &amp; Wikipedia)…
+                </div>
+              )}
               <div ref={messagesEndRef} />
             </CardContent>
           </Card>

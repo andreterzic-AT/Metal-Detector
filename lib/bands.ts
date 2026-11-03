@@ -1,6 +1,8 @@
 import type { UserProfile } from "./profile"
 
 export type BandInfo = {
+  /** Offizieller Name (bei Web-Ergebnissen von MusicBrainz) */
+  name?: string
   genre: string
   subgenre?: string
   attitude: string
@@ -10,6 +12,14 @@ export type BandInfo = {
   description: string
   lyricStyle: string
   profile: Partial<UserProfile>
+  /** Woher die Daten stammen – fehlt bei der eingebauten Liste */
+  source?: {
+    kind: "web"
+    musicbrainz: string
+    wikipedia?: string
+    tagCount: number
+    lyricSentences: number
+  }
 }
 
 // Erweiterte Band-Datenbank mit Profilen

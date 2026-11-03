@@ -27,5 +27,8 @@ und dein Profil wird auf dem Gerät gespeichert.
 ## Struktur
 
 - `app/page.tsx` – Oberfläche und Match-Berechnung
-- `lib/bands.ts` – Band-Datenbank (hier neue Bands ergänzen)
+- `lib/web-lookup.ts` – Bandsuche im Web (MusicBrainz + Wikipedia), mit Zwischenspeicher auf dem Gerät
+- `lib/genre-rules.ts` – Regeln, die Genres und Textthemen in Profilwerte übersetzen (hier feinjustieren)
+- `lib/match.ts` – Berechnung der Übereinstimmung
+- `lib/bands.ts` – eingebaute Band-Liste (Fallback ohne Internet)
 - `lib/profile.ts` – Profil-Eigenschaften, Labels und Speichern
