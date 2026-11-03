@@ -26,7 +26,9 @@ und dein Profil wird auf dem Gerät gespeichert.
 
 ## Struktur
 
-- `app/page.tsx` – Oberfläche und Match-Berechnung
+- `app/page.tsx` – Oberfläche
+- `lib/chat.ts` – Chat-Engine: erkennt Fragen („Wie passt X zu mir?“, „Bands wie X“, „Ich hasse Growls“) und beantwortet sie
+- `lib/band-source.ts` – Band suchen: zuerst Web, sonst eingebaute Liste
 - `lib/web-lookup.ts` – Bandsuche im Web (MusicBrainz + Wikipedia), mit Zwischenspeicher auf dem Gerät
 - `lib/genre-rules.ts` – Regeln, die Genres und Textthemen in Profilwerte übersetzen (hier feinjustieren)
 - `lib/match.ts` – Berechnung der Übereinstimmung

@@ -317,3 +317,39 @@ export async function lookupBand(query: string): Promise<WebBandResult> {
   if (Object.keys(profile).length > 0) writeCache(normalize(query), band)
   return { status: "found", band }
 }
+
+// ---------- Bands nach Genre (für Empfehlungen / ähnliche Bands) ----------
+
+export type GenreBand = { name: string; country?: string; tags: string[] }
+
+/**
+ * Sucht Bands mit einem bestimmten Genre-Tag auf MusicBrainz.
+ * Sortiert nach der Anzahl Tag-Stimmen – bekanntere Bands haben mehr davon.
+ */
+export async function searchByGenre(genre: string, limit = 8, exclude: string[] = []): Promise<GenreBand[]> {
+  const q = encodeURIComponent(`tag:"${genre.replace(/"/g, "")}" AND type:group`)
+  const data = await getJson<{ artists: MbArtist[] }>(`${MB}/artist/?query=${q}&fmt=json&limit=100`)
+  const skip = new Set(exclude.map(normalize))
+  const seen = new Set<string>()
+  return (data.artists || [])
+    .filter((a) => {
+      const key = normalize(a.name)
+      if (!key || skip.has(key) || seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+    .map((a) => ({ a, votes: (a.tags || []).reduce((s, t) => s + (t.count ?? 0), 0) }))
+    .sort((x, y) => y.votes - x.votes)
+    .slice(0, limit)
+    .map(({ a }) => ({
+      name: a.name,
+      country: a.country,
+      tags: (a.tags || [])
+        .sort((x, y) => (y.count ?? 0) - (x.count ?? 0))
+        .map((t) => t.name)
+        .slice(0, 3),
+    }))
+}
+
+/** Kurze Pause, damit mehrere MusicBrainz-Anfragen hintereinander erlaubt sind */
+export const mbPause = () => sleep(1100)

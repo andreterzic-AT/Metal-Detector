@@ -11,7 +11,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { bandDatabase, type BandInfo } from "@/lib/bands"
 import { calculateMatch, type Rating } from "@/lib/match"
-import { getCachedBandNames, lookupBand } from "@/lib/web-lookup"
+import { getCachedBandNames } from "@/lib/web-lookup"
+import { respond, type ChatAction, type LastBand } from "@/lib/chat"
 import {
   defaultProfile,
   loadProfile,
@@ -26,6 +27,7 @@ type Message = {
   role: "user" | "assistant"
   content: string
   timestamp: Date
+  actions?: ChatAction[]
 }
 
 const buttonStyle =
@@ -88,8 +90,13 @@ export default function MetalDetectorPage() {
       id: "welcome",
       role: "assistant",
       content:
-        "Hey Kumpel! 🤘 Willkommen beim Metal Detector!\n\nIch bin dein persönlicher Musik-Guide mit intelligenter Profil-Analyse. Öffne die Einstellungen (Button unter der Ampel) und erstelle dein persönliches Musikprofil mit dem Bewertungssystem (0 = mag ich nicht, 5 = neutral, 10 = davon will ich viel).\n\nDann kannst du nach jeder beliebigen Band suchen – ich hole mir die Infos aus dem Web (MusicBrainz & Wikipedia) und sage dir, wie gut sie zu dir passen! 🎸",
+        "Hey Kumpel! 🤘 Willkommen beim Metal Detector!\n\nIch bin dein persönlicher Musik-Guide mit intelligenter Profil-Analyse. Öffne die Einstellungen (Button unter der Ampel) und erstelle dein persönliches Musikprofil mit dem Bewertungssystem (0 = mag ich nicht, 5 = neutral, 10 = davon will ich viel).\n\nDann kannst du nach jeder beliebigen Band suchen – ich hole mir die Infos aus dem Web (MusicBrainz & Wikipedia) und sage dir, wie gut sie zu dir passen! 🎸\n\nOder schreib mir einfach: „Wie passt Sabaton zu mir?“, „Bands wie Nightwish“, „Empfiehl mir was“ oder „Ich hasse Growls“ 💬",
       timestamp: new Date(),
+      actions: [
+        { label: "💡 Empfiehl mir was", type: "say", value: "Empfiehl mir was" },
+        { label: "👤 Was mag ich?", type: "say", value: "Was mag ich?" },
+        { label: "❔ Hilfe", type: "say", value: "Hilfe" },
+      ],
     },
   ])
   const [input, setInput] = useState("")
@@ -103,6 +110,8 @@ export default function MetalDetectorPage() {
   const [isSearching, setIsSearching] = useState(false)
   const [suggestions, setSuggestions] = useState<string[]>(Object.keys(bandDatabase))
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const lastBandRef = useRef<LastBand>(null)
+  const undoRef = useRef<UserProfile | null>(null)
 
   // Profil beim Start vom Gerät laden …
   useEffect(() => {
@@ -120,95 +129,85 @@ export default function MetalDetectorPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages])
 
-  const addMessage = (role: "user" | "assistant", content: string) => {
-    const newMessage: Message = { id: `${Date.now()}-${messageCounter++}`, role, content, timestamp: new Date() }
+  const addMessage = (role: "user" | "assistant", content: string, actions?: ChatAction[]) => {
+    const newMessage: Message = { id: `${Date.now()}-${messageCounter++}`, role, content, timestamp: new Date(), actions }
     setMessages((prev) => [...prev, newMessage])
   }
 
   const setProfileValue = (key: ProfileKey, value: number) => setUserProfile((p) => ({ ...p, [key]: value }))
 
-  const handleSendMessage = () => {
-    if (!input.trim()) return
-
-    addMessage("user", input)
-    const lowerInput = input.toLowerCase()
-    setInput("")
-
-    setTimeout(() => {
-      if (lowerInput.includes("empfehlung") || lowerInput.includes("vorschlag")) {
-        addMessage(
-          "assistant",
-          `Basierend auf deinem Profil könnte ich dir diese Bands empfehlen: Metallica, Nightwish, Iron Maiden, Amon Amarth, Gojira.\n\nProbier sie einfach oben in der Suche aus! 🎸`
-        )
-      } else if (lowerInput.includes("wie") || lowerInput.includes("funktioniert")) {
-        addMessage(
-          "assistant",
-          `Das System analysiert Bands anhand deines persönlichen Profils!\n\n📊 Du bewertest 50+ Eigenschaften von 0-10\n🌍 Ich hole Genres & Themen der Band aus dem Web und schätze daraus ihr Profil\n🎯 Ich vergleiche beide und berechne die Übereinstimmung\n\n🟢 80%+ = Premium-Treffer\n🟢 70-79% = Starke Übereinstimmung\n🟡 60-69% = Gute Übereinstimmung\n🟡 50-59% = Testweise anhören\n🔴 <50% = Nicht empfohlen`
-        )
-      } else {
-        const responses = [
-          `Cool! Probier mal die Bandsuche aus! 🤘`,
-          `Nice! Hast du schon dein Profil eingestellt? ⚙️`,
-          `Interessant! Such mal nach einer Band! 🔍`,
-        ]
-        addMessage("assistant", responses[Math.floor(Math.random() * responses.length)])
-      }
-    }, 500)
-  }
-
-  const showAnalysis = (name: string, info: BandInfo) => {
-    const analysis = calculateMatch(name, info, userProfile)
+  const showAnalysis = (name: string, info: BandInfo, profile: UserProfile = userProfile) => {
+    const analysis = calculateMatch(name, info, profile)
     setCurrentBand(name)
     setRating(analysis.rating)
     setScoreDetails(analysis.scoreBreakdown)
+    lastBandRef.current = { name, info }
+    setSuggestions((s) => [...new Set([name, ...s])])
 
     let links = `[🎧 Auf Spotify anhören](${analysis.spotifyLink})`
     if (info.source?.wikipedia) links += `\n[📖 Wikipedia](${info.source.wikipedia})`
     if (info.source) links += `\n[🗂️ MusicBrainz](${info.source.musicbrainz})`
-    addMessage("assistant", `${analysis.explanation}\n\n${analysis.scoreBreakdown}\n\n${links}`)
+    addMessage("assistant", `${analysis.explanation}\n\n${analysis.scoreBreakdown}\n\n${links}`, [
+      { label: "🔎 Ähnliche Bands", type: "say", value: `Bands wie ${name}` },
+      { label: "🎤 Live?", type: "say", value: `Wie ist ${name} live?` },
+      { label: "❓ Warum?", type: "say", value: "Warum?" },
+    ])
   }
 
-  const handleBandSearch = async () => {
-    const name = bandSearch.trim()
-    if (!name || isSearching) return
-
+  // Chat: Nachricht an die Chat-Engine schicken
+  const sendChat = async (text: string, shownText = text) => {
+    if (!text.trim() || isSearching) return
+    addMessage("user", shownText)
     setIsSearching(true)
-    setCurrentBand(name)
-    setRating(null)
-    setScoreDetails("")
-    addMessage("user", `🔍 ${name}`)
-
     try {
-      const result = await lookupBand(name)
-      const local = bandDatabase[name.toLowerCase()]
-
-      if (result.status === "found") {
-        const display = result.band.name || name
-        showAnalysis(display, result.band)
-        setSuggestions((s) => [...new Set([display, ...s])])
-      } else if (local) {
-        // Kein Internet oder nichts gefunden → eingebaute Liste
-        addMessage(
-          "assistant",
-          result.status === "error"
-            ? "📡 Keine Verbindung zum Web – ich nutze meine eingebaute Liste."
-            : "Im Web nichts gefunden – ich nutze meine eingebaute Liste."
-        )
-        showAnalysis(name, local)
-      } else if (result.status === "error") {
-        addMessage(
-          "assistant",
-          `📡 Ich konnte das Web gerade nicht erreichen (${result.message}). Prüf deine Internetverbindung und versuch es nochmal.`
-        )
-      } else {
-        addMessage(
-          "assistant",
-          `**${name}**\n\nDiese Band habe ich im Web nicht gefunden. Prüf die Schreibweise oder versuch den englischen Namen.\n\n[🎧 Auf Spotify suchen](https://open.spotify.com/search/${encodeURIComponent(name)})`
-        )
+      const outcome = await respond(text, { profile: userProfile, lastBand: lastBandRef.current })
+      if (outcome.lastBand !== undefined) lastBandRef.current = outcome.lastBand
+      let profile = userProfile
+      if (outcome.profile) {
+        undoRef.current = userProfile
+        profile = outcome.profile
+        setUserProfile(outcome.profile)
       }
+      for (const r of outcome.replies) addMessage("assistant", r.text, r.actions)
+      if (outcome.analyze) {
+        if (outcome.analyze.note) addMessage("assistant", outcome.analyze.note)
+        showAnalysis(outcome.analyze.name, outcome.analyze.info, profile)
+      }
+    } catch {
+      addMessage("assistant", "Uff, da ist etwas schiefgelaufen 😵 Versuch es bitte nochmal.")
     } finally {
       setIsSearching(false)
     }
+  }
+
+  const handleSendMessage = () => {
+    const text = input
+    setInput("")
+    sendChat(text)
+  }
+
+  const handleAction = (action: ChatAction) => {
+    if (action.type === "link") {
+      window.open(action.value, "_blank", "noopener")
+    } else if (action.type === "undo") {
+      if (!undoRef.current) return
+      setUserProfile(undoRef.current)
+      undoRef.current = null
+      addMessage("assistant", "↩️ Rückgängig gemacht – dein Profil ist wieder wie vorher.")
+    } else if (action.type === "band") {
+      sendChat(`Wie passt ${action.value} zu mir?`, `🔍 ${action.value}`)
+    } else {
+      sendChat(action.value)
+    }
+  }
+
+  // Suchfeld oben: direkte Band-Analyse
+  const handleBandSearch = () => {
+    const name = bandSearch.trim()
+    if (!name) return
+    setRating(null)
+    setScoreDetails("")
+    sendChat(`Wie passt ${name} zu mir?`, `🔍 ${name}`)
   }
 
   const getRatingText = (r: Rating) => {
@@ -334,6 +333,20 @@ export default function MetalDetectorPage() {
                       >
                         {message.timestamp.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}
                       </div>
+                      {message.actions && message.actions.length > 0 && (
+                        <div className="flex flex-wrap gap-2 mt-3">
+                          {message.actions.map((a, i) => (
+                            <button
+                              key={i}
+                              onClick={() => handleAction(a)}
+                              disabled={isSearching}
+                              className="text-xs px-3 py-1.5 rounded-full border border-zinc-600/60 bg-black/40 text-zinc-200 hover:bg-zinc-700/60 active:scale-95 transition disabled:opacity-40"
+                            >
+                              {a.label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </motion.div>
                 ))}
@@ -341,7 +354,7 @@ export default function MetalDetectorPage() {
               {isSearching && (
                 <div className="flex items-center gap-2 text-sm text-zinc-400">
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  Suche im Web (MusicBrainz &amp; Wikipedia)…
+                  Ich schau mal nach… 🔍
                 </div>
               )}
               <div ref={messagesEndRef} />
@@ -360,7 +373,7 @@ export default function MetalDetectorPage() {
                   enterKeyHint="send"
                   className={inputStyle}
                 />
-                <Button onClick={handleSendMessage} className={buttonStyle} aria-label="Nachricht senden">
+                <Button onClick={handleSendMessage} disabled={isSearching} className={buttonStyle} aria-label="Nachricht senden">
                   <Send className="w-5 h-5" />
                 </Button>
               </div>
