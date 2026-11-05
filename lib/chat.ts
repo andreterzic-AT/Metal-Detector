@@ -4,6 +4,7 @@ import { genreRules } from "./genre-rules"
 import { calculateMatch } from "./match"
 import { getPropertyLabel, type ProfileKey, type UserProfile } from "./profile"
 import { mbPause, searchByGenre, type GenreBand } from "./web-lookup"
+import { findOnWatchlist, type WatchItem } from "./watchlist"
 
 /*
  * Chat-Engine ohne KI: erkennt typische deutsche Sätze ("Wie passt X zu mir?",
@@ -11,7 +12,7 @@ import { mbPause, searchByGenre, type GenreBand } from "./web-lookup"
  * und dem Nutzerprofil.
  */
 
-export type ChatAction = { label: string; type: "band" | "say" | "undo" | "link"; value: string }
+export type ChatAction = { label: string; type: "band" | "say" | "undo" | "link" | "watch"; value: string }
 export type BotReply = { text: string; actions?: ChatAction[] }
 export type LastBand = { name: string; info: BandInfo } | null
 
@@ -23,9 +24,13 @@ export type ChatOutcome = {
   analyze?: { name: string; info: BandInfo; note?: string }
   /** Band, auf die sich Folgefragen beziehen sollen */
   lastBand?: LastBand
+  /** Band auf die Merkliste setzen */
+  watchAdd?: { name: string; info: BandInfo }
+  /** Band von der Merkliste nehmen */
+  watchRemove?: string
 }
 
-type Ctx = { profile: UserProfile; lastBand: LastBand }
+type Ctx = { profile: UserProfile; lastBand: LastBand; watchlist: WatchItem[] }
 
 // ---------- Text-Helfer ----------
 
@@ -204,7 +209,8 @@ const HELP: BotReply = {
     "💡 **Empfehlungen** – „Empfiehl mir was“\n" +
     "⚙️ **Profil per Chat ändern** – „Ich hasse Growls“, „Mehr Melodie bitte“\n" +
     "🎤 **Folgefragen** – „Wie sind die live?“, „Warum?“\n" +
-    "👤 **Über dich** – „Was mag ich?“, „Welche Genres passen zu mir?“",
+    "👤 **Über dich** – „Was mag ich?“, „Welche Genres passen zu mir?“\n" +
+    "❤️ **Merkliste** – „Merk dir Sabaton“, „Zeig meine Merkliste“",
   actions: [sayAction("Empfiehl mir was"), sayAction("Was mag ich?"), sayAction("Bands wie Metallica")],
 }
 
@@ -420,6 +426,57 @@ async function genreBands(genre: string): Promise<ChatOutcome> {
   }
 }
 
+// ---------- Merkliste ----------
+
+function showWatchlist(ctx: Ctx): ChatOutcome {
+  if (ctx.watchlist.length === 0) {
+    return {
+      replies: [
+        {
+          text: "Deine Merkliste ist noch leer 📭\n\nTipp nach einer Band-Analyse auf „❤️ Merken“ oder schreib „Merk dir Sabaton“.",
+          actions: [sayAction("💡 Empfiehl mir was", "Empfiehl mir was")],
+        },
+      ],
+    }
+  }
+  const rows = ctx.watchlist
+    .map((i) => ({ i, m: calculateMatch(i.name, i.info, ctx.profile) }))
+    .sort((a, b) => Number(a.i.listened) - Number(b.i.listened) || b.m.matchPercentage - a.m.matchPercentage)
+  const icon = (r: string | null) => (r === "green" ? "🟢" : r === "yellow" ? "🟡" : r === "red" ? "🔴" : "⚪")
+  const open = rows.filter((r) => !r.i.listened)
+  const done = rows.filter((r) => r.i.listened)
+  let text = `❤️ **Deine Merkliste** (${ctx.watchlist.length})\n\n`
+  if (open.length) text += `**Noch anhören:**\n${open.map((r) => `${icon(r.m.rating)} ${r.i.name} – ${r.m.matchPercentage}%`).join("\n")}\n\n`
+  if (done.length) text += `**Schon gehört:**\n${done.map((r) => `✓ ${r.i.name} – ${r.m.matchPercentage}%`).join("\n")}`
+  return { replies: [{ text: text.trim(), actions: open.slice(0, 6).map((r) => bandAction(r.i.name)) }] }
+}
+
+async function addWatch(query: string, ctx: Ctx): Promise<ChatOutcome> {
+  const band = await resolveBand(query, ctx)
+  if (typeof band === "string") return { replies: [{ text: band }] }
+  if (findOnWatchlist(ctx.watchlist, band.name)) {
+    return { replies: [{ text: `**${band.name}** steht schon auf deiner Merkliste ❤️`, actions: [sayAction("❤️ Merkliste zeigen", "Zeig meine Merkliste")] }], lastBand: band }
+  }
+  const m = calculateMatch(band.name, band.info, ctx.profile)
+  return {
+    replies: [
+      {
+        text: `❤️ **${band.name}** ist auf deiner Merkliste (${m.matchPercentage}% Übereinstimmung).`,
+        actions: [sayAction("❤️ Merkliste zeigen", "Zeig meine Merkliste")],
+      },
+    ],
+    watchAdd: band,
+    lastBand: band,
+  }
+}
+
+function removeWatch(query: string, ctx: Ctx): ChatOutcome {
+  const name = !query || PRONOUNS.test(query) ? ctx.lastBand?.name ?? "" : query
+  const item = name ? findOnWatchlist(ctx.watchlist, name) : undefined
+  if (!item) return { replies: [{ text: name ? `**${name}** steht nicht auf deiner Merkliste.` : "Welche Band soll ich von der Merkliste nehmen?" }] }
+  return { replies: [{ text: `🗑️ **${item.name}** ist von der Merkliste runter.` }], watchRemove: item.name }
+}
+
 // ---------- Hauptfunktion ----------
 
 export async function respond(input: string, ctx: Ctx): Promise<ChatOutcome> {
@@ -431,7 +488,7 @@ export async function respond(input: string, ctx: Ctx): Promise<ChatOutcome> {
   if (!n) return { replies: [] }
 
   // Begrüßung / Dank
-  if (wordCount <= 4 && /^(hi|hallo|hey|moin|servus|na|yo|huhu|guten (morgen|tag|abend)|gruess)/.test(n)) {
+  if (wordCount <= 4 && /^(hi|hallo|hey|moin|servus|na|yo|huhu|guten (morgen|tag|abend)|gruess\w*)([^a-z]|$)/.test(n)) {
     return { replies: [{ text: "Hey Kumpel! 🤘 Worauf hast du Bock? Ich kann Bands bewerten, vergleichen, ähnliche finden oder dir was empfehlen.", actions: HELP.actions }] }
   }
   if (wordCount <= 5 && /^(danke|dankeschoen|thx|thanks|merci|super|cool|nice|geil|top|perfekt|ok|okay|alles klar)/.test(n)) {
@@ -445,6 +502,16 @@ export async function respond(input: string, ctx: Ctx): Promise<ChatOutcome> {
   if ((m = n.match(/zeig (mir )?(ein paar |paar |einige )?(.+?) bands?$/)) && genreRules.some((r) => r.match === m![3].trim())) {
     return genreBands(m[3].trim())
   }
+
+  // Merkliste
+  if ((m = text.match(/^(?:bitte\s+)?(?:nimm|l(?:ö|oe|o)sch\w*|entfern\w*|streich\w*)\s+(.*?)\s*(?:(?:von|aus) (?:der|meiner) merkliste(?:\s+(?:runter|raus|weg))?|runter|raus|weg)?\s*[.!]?$/i))) {
+    if (/merkliste/i.test(text) || (/(^|\s)(runter|raus|weg)[.!]?$/i.test(text) && ctx.watchlist.length > 0)) return removeWatch(cleanBand(m[1]), ctx)
+  }
+  if ((m = text.match(/^(?:bitte\s+)?(?:merk(?:e)?\s+(?:dir|mir)|speicher\w*|notier\w*|setz\w*|pack\w*|leg\w*|schreib\w*)\s+(.*?)\s*(?:auf (?:die|meine) merkliste|vor|auf die liste)?\s*[.!]?$/i)) &&
+      /^(bitte\s+)?merk|merkliste|auf die liste/i.test(text)) {
+    return addWatch(cleanBand(m[1]), ctx)
+  }
+  if (/merkliste|gemerkte bands|was hab ich (mir )?gemerkt|meine liste/.test(n)) return showWatchlist(ctx)
 
   // Vergleich
   if ((m = text.match(/vergleich\w*\s+(.+?)\s+(?:mit|und|vs\.?|gegen|oder)\s+(.+)/i))) {

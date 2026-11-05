@@ -22,12 +22,13 @@ npm run build      # erzeugt die fertige App im Ordner out/
 - **Android (Chrome):** Seite öffnen → Menü ⋮ → „App installieren“.
 
 Die App startet dann im Vollbild ohne Browserleiste, funktioniert auch offline,
-und dein Profil wird auf dem Gerät gespeichert.
+und dein Profil sowie deine Merkliste werden auf dem Gerät gespeichert.
 
 ## Struktur
 
 - `app/page.tsx` – Oberfläche
 - `lib/chat.ts` – Chat-Engine: erkennt Fragen („Wie passt X zu mir?“, „Bands wie X“, „Ich hasse Growls“) und beantwortet sie
+- `lib/watchlist.ts` + `components/watchlist-dialog.tsx` – Merkliste (auf dem Gerät gespeichert)
 - `lib/band-source.ts` – Band suchen: zuerst Web, sonst eingebaute Liste
 - `lib/web-lookup.ts` – Bandsuche im Web (MusicBrainz + Wikipedia), mit Zwischenspeicher auf dem Gerät
 - `lib/genre-rules.ts` – Regeln, die Genres und Textthemen in Profilwerte übersetzen (hier feinjustieren)

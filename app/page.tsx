@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react"
 import { motion, AnimatePresence } from "framer-motion"
-import { Send, Music, Mic, Search, Volume2, ExternalLink, Info, Settings, Loader2 } from "lucide-react"
+import { Send, Music, Mic, Search, Volume2, ExternalLink, Info, Settings, Loader2, Heart } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
@@ -13,6 +13,17 @@ import { bandDatabase, type BandInfo } from "@/lib/bands"
 import { calculateMatch, type Rating } from "@/lib/match"
 import { getCachedBandNames } from "@/lib/web-lookup"
 import { respond, type ChatAction, type LastBand } from "@/lib/chat"
+import { findBand } from "@/lib/band-source"
+import {
+  addToWatchlist,
+  isOnWatchlist,
+  loadWatchlist,
+  removeFromWatchlist,
+  saveWatchlist,
+  toggleListened,
+  type WatchItem,
+} from "@/lib/watchlist"
+import { WatchlistDialog } from "@/components/watchlist-dialog"
 import {
   defaultProfile,
   loadProfile,
@@ -109,6 +120,9 @@ export default function MetalDetectorPage() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [isSearching, setIsSearching] = useState(false)
   const [suggestions, setSuggestions] = useState<string[]>(Object.keys(bandDatabase))
+  const [watchlist, setWatchlist] = useState<WatchItem[]>([])
+  const [isWatchlistOpen, setIsWatchlistOpen] = useState(false)
+  const [currentInfo, setCurrentInfo] = useState<BandInfo | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const lastBandRef = useRef<LastBand>(null)
   const undoRef = useRef<UserProfile | null>(null)
@@ -116,6 +130,7 @@ export default function MetalDetectorPage() {
   // Profil beim Start vom Gerät laden …
   useEffect(() => {
     setUserProfile(loadProfile())
+    setWatchlist(loadWatchlist())
     setProfileLoaded(true)
     setSuggestions((s) => [...new Set([...getCachedBandNames(), ...s])])
   }, [])
@@ -124,6 +139,10 @@ export default function MetalDetectorPage() {
   useEffect(() => {
     if (profileLoaded) saveProfile(userProfile)
   }, [userProfile, profileLoaded])
+
+  useEffect(() => {
+    if (profileLoaded) saveWatchlist(watchlist)
+  }, [watchlist, profileLoaded])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -139,6 +158,7 @@ export default function MetalDetectorPage() {
   const showAnalysis = (name: string, info: BandInfo, profile: UserProfile = userProfile) => {
     const analysis = calculateMatch(name, info, profile)
     setCurrentBand(name)
+    setCurrentInfo(info)
     setRating(analysis.rating)
     setScoreDetails(analysis.scoreBreakdown)
     lastBandRef.current = { name, info }
@@ -148,10 +168,39 @@ export default function MetalDetectorPage() {
     if (info.source?.wikipedia) links += `\n[📖 Wikipedia](${info.source.wikipedia})`
     if (info.source) links += `\n[🗂️ MusicBrainz](${info.source.musicbrainz})`
     addMessage("assistant", `${analysis.explanation}\n\n${analysis.scoreBreakdown}\n\n${links}`, [
+      { label: "❤️ Merken", type: "watch", value: name },
       { label: "🔎 Ähnliche Bands", type: "say", value: `Bands wie ${name}` },
       { label: "🎤 Live?", type: "say", value: `Wie ist ${name} live?` },
       { label: "❓ Warum?", type: "say", value: "Warum?" },
     ])
+  }
+
+  // ---------- Merkliste ----------
+  const addWatch = (name: string, info: BandInfo, announce = true) => {
+    if (isOnWatchlist(watchlist, name)) {
+      if (announce) addMessage("assistant", `**${name}** steht schon auf deiner Merkliste ❤️`)
+      return
+    }
+    setWatchlist((list) => addToWatchlist(list, name, info))
+    if (announce)
+      addMessage("assistant", `❤️ **${name}** ist auf deiner Merkliste.`, [
+        { label: "❤️ Merkliste zeigen", type: "say", value: "Zeig meine Merkliste" },
+      ])
+  }
+
+  const removeWatch = (name: string) => setWatchlist((list) => removeFromWatchlist(list, name))
+
+  const toggleCurrentWatch = () => {
+    if (!currentBand || !currentInfo) return
+    if (isOnWatchlist(watchlist, currentBand)) removeWatch(currentBand)
+    else addWatch(currentBand, currentInfo, false)
+  }
+
+  const watchFromChip = async (name: string) => {
+    if (lastBandRef.current && lastBandRef.current.name === name) return addWatch(name, lastBandRef.current.info)
+    const found = await findBand(name)
+    if (found.ok) addWatch(found.name, found.info)
+    else addMessage("assistant", `Ich konnte **${name}** gerade nicht laden – versuch es gleich nochmal.`)
   }
 
   // Chat: Nachricht an die Chat-Engine schicken
@@ -160,8 +209,13 @@ export default function MetalDetectorPage() {
     addMessage("user", shownText)
     setIsSearching(true)
     try {
-      const outcome = await respond(text, { profile: userProfile, lastBand: lastBandRef.current })
+      const outcome = await respond(text, { profile: userProfile, lastBand: lastBandRef.current, watchlist })
       if (outcome.lastBand !== undefined) lastBandRef.current = outcome.lastBand
+      if (outcome.watchAdd) {
+        const { name, info } = outcome.watchAdd
+        setWatchlist((list) => addToWatchlist(list, name, info))
+      }
+      if (outcome.watchRemove) removeWatch(outcome.watchRemove)
       let profile = userProfile
       if (outcome.profile) {
         undoRef.current = userProfile
@@ -194,6 +248,8 @@ export default function MetalDetectorPage() {
       setUserProfile(undoRef.current)
       undoRef.current = null
       addMessage("assistant", "↩️ Rückgängig gemacht – dein Profil ist wieder wie vorher.")
+    } else if (action.type === "watch") {
+      watchFromChip(action.value)
     } else if (action.type === "band") {
       sendChat(`Wie passt ${action.value} zu mir?`, `🔍 ${action.value}`)
     } else {
@@ -242,6 +298,19 @@ export default function MetalDetectorPage() {
             </h1>
             <p className="text-sm text-zinc-400">Profil-basierte Musik-Analyse 🤘</p>
           </div>
+          <button
+            type="button"
+            onClick={() => setIsWatchlistOpen(true)}
+            aria-label={`Merkliste öffnen (${watchlist.length})`}
+            className="ml-auto relative w-12 h-12 inline-flex items-center justify-center rounded-xl border border-zinc-700/60 bg-zinc-900/80 hover:bg-zinc-800 active:scale-95 transition"
+          >
+            <Heart className={`w-6 h-6 ${watchlist.length ? "text-red-500 fill-red-500" : "text-zinc-300"}`} />
+            {watchlist.length > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 min-w-[1.25rem] h-5 px-1 rounded-full bg-red-600 text-white text-xs font-bold flex items-center justify-center">
+                {watchlist.length}
+              </span>
+            )}
+          </button>
         </div>
       </header>
 
@@ -280,6 +349,19 @@ export default function MetalDetectorPage() {
                     <Badge className={`bg-gradient-to-r ${getRatingColor(rating)} text-white border-0 shadow-md`}>
                       {rating === "green" ? "✓" : rating === "yellow" ? "~" : "✗"}
                     </Badge>
+                  )}
+                  {currentInfo && !isSearching && (
+                    <button
+                      type="button"
+                      onClick={toggleCurrentWatch}
+                      aria-label={isOnWatchlist(watchlist, currentBand) ? "Von der Merkliste entfernen" : "Auf die Merkliste"}
+                      className="ml-auto inline-flex items-center gap-1 text-xs px-3 py-1.5 rounded-full border border-zinc-600/60 bg-black/40 text-zinc-200 hover:bg-zinc-700/60 active:scale-95 transition"
+                    >
+                      <Heart
+                        className={`w-4 h-4 ${isOnWatchlist(watchlist, currentBand) ? "text-red-500 fill-red-500" : ""}`}
+                      />
+                      {isOnWatchlist(watchlist, currentBand) ? "Gemerkt" : "Merken"}
+                    </button>
                   )}
                 </motion.div>
               )}
@@ -496,6 +578,18 @@ export default function MetalDetectorPage() {
           </Card>
         </div>
       </div>
+      <WatchlistDialog
+        open={isWatchlistOpen}
+        onOpenChange={setIsWatchlistOpen}
+        items={watchlist}
+        profile={userProfile}
+        onAnalyze={(name) => {
+          setIsWatchlistOpen(false)
+          sendChat(`Wie passt ${name} zu mir?`, `🔍 ${name}`)
+        }}
+        onToggleListened={(name) => setWatchlist((list) => toggleListened(list, name))}
+        onRemove={removeWatch}
+      />
     </div>
   )
 }
