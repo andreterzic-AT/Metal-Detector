@@ -24,6 +24,8 @@ import {
   type WatchItem,
 } from "@/lib/watchlist"
 import { WatchlistDialog } from "@/components/watchlist-dialog"
+import { AiChat, AiError, aiAvailable, loadAiSetting, modelLabel, saveAiSetting, type AiSetting } from "@/lib/ai-chat"
+import { AI_MODELS } from "@/lib/ai-tools"
 import {
   defaultProfile,
   loadProfile,
@@ -39,6 +41,8 @@ type Message = {
   content: string
   timestamp: Date
   actions?: ChatAction[]
+  /** Welches KI-Modell geantwortet hat (leer = Chat ohne KI) */
+  via?: string
 }
 
 const buttonStyle =
@@ -123,6 +127,13 @@ export default function MetalDetectorPage() {
   const [watchlist, setWatchlist] = useState<WatchItem[]>([])
   const [isWatchlistOpen, setIsWatchlistOpen] = useState(false)
   const [currentInfo, setCurrentInfo] = useState<BandInfo | null>(null)
+  const [aiSetting, setAiSetting] = useState<AiSetting>("haiku")
+  const aiRef = useRef(new AiChat())
+  // Aktuelle Werte für die KI-Werkzeuge (React-State wäre in laufenden Anfragen veraltet)
+  const profileRef = useRef<UserProfile>(defaultProfile)
+  const watchlistRef = useRef<WatchItem[]>([])
+  profileRef.current = userProfile
+  watchlistRef.current = watchlist
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const lastBandRef = useRef<LastBand>(null)
   const undoRef = useRef<UserProfile | null>(null)
@@ -131,6 +142,7 @@ export default function MetalDetectorPage() {
   useEffect(() => {
     setUserProfile(loadProfile())
     setWatchlist(loadWatchlist())
+    setAiSetting(loadAiSetting())
     setProfileLoaded(true)
     setSuggestions((s) => [...new Set([...getCachedBandNames(), ...s])])
   }, [])
@@ -148,8 +160,8 @@ export default function MetalDetectorPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages])
 
-  const addMessage = (role: "user" | "assistant", content: string, actions?: ChatAction[]) => {
-    const newMessage: Message = { id: `${Date.now()}-${messageCounter++}`, role, content, timestamp: new Date(), actions }
+  const addMessage = (role: "user" | "assistant", content: string, actions?: ChatAction[], via?: string) => {
+    const newMessage: Message = { id: `${Date.now()}-${messageCounter++}`, role, content, timestamp: new Date(), actions, via }
     setMessages((prev) => [...prev, newMessage])
   }
 
@@ -204,9 +216,57 @@ export default function MetalDetectorPage() {
   }
 
   // Chat: Nachricht an die Chat-Engine schicken
-  const sendChat = async (text: string, shownText = text) => {
+  // KI-Chat: Werkzeuge der KI greifen über diese Funktionen auf die App zu
+  const aiDeps = {
+    getProfile: () => profileRef.current,
+    applyProfile: (p: UserProfile) => {
+      undoRef.current = profileRef.current
+      profileRef.current = p
+      setUserProfile(p)
+    },
+    getWatchlist: () => watchlistRef.current,
+    setWatchlist: (list: WatchItem[]) => {
+      watchlistRef.current = list
+      setWatchlist(list)
+    },
+    showBand: (name: string, info: BandInfo) => {
+      const analysis = calculateMatch(name, info, profileRef.current)
+      setCurrentBand(name)
+      setCurrentInfo(info)
+      setRating(analysis.rating)
+      setScoreDetails(analysis.scoreBreakdown)
+      lastBandRef.current = { name, info }
+      setSuggestions((s) => [...new Set([name, ...s])])
+    },
+    getLastBand: () => lastBandRef.current,
+  }
+
+  const useAi = aiAvailable() && aiSetting !== "off"
+
+  const sendChat = async (text: string, shownText = text, allowAi = false) => {
     if (!text.trim() || isSearching) return
-    addMessage("user", shownText)
+    if (allowAi && useAi && (aiSetting === "haiku" || aiSetting === "opus")) {
+      addMessage("user", shownText)
+      setIsSearching(true)
+      try {
+        const reply = await aiRef.current.send(text, aiSetting, aiDeps)
+        if (reply.newConversation) addMessage("assistant", "🧹 Das Gespräch wurde zu lang – ich habe ein neues angefangen. Dein Profil und deine Merkliste bleiben natürlich.")
+        addMessage("assistant", reply.text, reply.actions, modelLabel(reply.model))
+        return
+      } catch (e) {
+        const msg = e instanceof AiError ? e.message : "KI nicht erreichbar"
+        addMessage("assistant", `🤖 ${msg} – ich antworte ohne KI.`)
+      } finally {
+        setIsSearching(false)
+      }
+      return sendRuleChat(text, shownText, false)
+    }
+    return sendRuleChat(text, shownText, true)
+  }
+
+  // Chat ohne KI (Satzmuster-Erkennung)
+  const sendRuleChat = async (text: string, shownText: string, showUser: boolean) => {
+    if (showUser) addMessage("user", shownText)
     setIsSearching(true)
     try {
       const outcome = await respond(text, { profile: userProfile, lastBand: lastBandRef.current, watchlist })
@@ -237,7 +297,7 @@ export default function MetalDetectorPage() {
   const handleSendMessage = () => {
     const text = input
     setInput("")
-    sendChat(text)
+    sendChat(text, text, true)
   }
 
   const handleAction = (action: ChatAction) => {
@@ -414,6 +474,7 @@ export default function MetalDetectorPage() {
                         className={`text-xs opacity-60 mt-2 ${message.role === "user" ? "text-black" : "text-zinc-400"}`}
                       >
                         {message.timestamp.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}
+                        {message.via && <span className="ml-2">🤖 {message.via}</span>}
                       </div>
                       {message.actions && message.actions.length > 0 && (
                         <div className="flex flex-wrap gap-2 mt-3">
@@ -515,6 +576,34 @@ export default function MetalDetectorPage() {
                         Bewertungsskala: 0 = Mag ich überhaupt nicht | 5 = Neutral | 10 = Davon will ich möglichst viel
                       </p>
                     </DialogHeader>
+
+                    {aiAvailable() && (
+                      <div className="rounded-xl border border-zinc-700/50 bg-black/40 p-3 space-y-2">
+                        <p className="text-sm font-semibold text-zinc-200">🤖 KI-Chat</p>
+                        <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label="KI-Modell">
+                          {(["off", "haiku", "opus"] as AiSetting[]).map((v) => (
+                            <button
+                              key={v}
+                              type="button"
+                              role="radio"
+                              aria-checked={aiSetting === v}
+                              onClick={() => {
+                                setAiSetting(v)
+                                saveAiSetting(v)
+                              }}
+                              className={`rounded-lg px-2 py-2 text-xs sm:text-sm border transition ${
+                                aiSetting === v ? "bg-zinc-100 text-black border-zinc-100 font-bold" : "border-zinc-600 text-zinc-300 hover:bg-zinc-800"
+                              }`}
+                            >
+                              {v === "off" ? "Aus" : AI_MODELS[v].label}
+                              <span className="block text-[10px] font-normal opacity-70">
+                                {v === "off" ? "ohne KI" : AI_MODELS[v].hint}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
 
                     <Tabs defaultValue="musik" className="w-full">
                       <TabsList className="grid w-full grid-cols-4 bg-zinc-800/50">

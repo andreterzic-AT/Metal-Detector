@@ -1,0 +1,27 @@
+# Metal Detector – KI-Server auf Cloudflare Workers
+name = "metal-detector-ai"
+main = "src/index.ts"
+compatibility_date = "2026-09-01"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+# Nur diese Seiten dürfen den Server benutzen
+ALLOWED_ORIGINS = "https://andreterzic-at.github.io,http://localhost:3000"
+# Tageslimit für alle Nutzer zusammen: eine Haiku-Anfrage = 1 Einheit, eine Opus-Anfrage = OPUS_COST Einheiten.
+# Eine Chat-Nachricht braucht je nach Werkzeugen 1–4 Anfragen.
+DAILY_BUDGET = "1000"
+OPUS_COST = "25"
+
+# Höchstens 20 Anfragen pro Minute und Nutzer (IP)
+[[ratelimits]]
+name = "RATE_LIMITER"
+namespace_id = "1001"
+simple = { limit = 20, period = 60 }
+
+[[durable_objects.bindings]]
+name = "BUDGET"
+class_name = "BudgetCounter"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["BudgetCounter"]

@@ -27,6 +27,8 @@ jobs:
       - run: npm run build
         env:
           NEXT_PUBLIC_BASE_PATH: /${{ github.event.repository.name }}
+          # Adresse des KI-Servers (GitHub: Settings → Secrets and variables → Actions → Variables)
+          NEXT_PUBLIC_AI_URL: ${{ vars.AI_PROXY_URL }}
       - run: touch out/.nojekyll
       - uses: actions/upload-pages-artifact@v3
         with:

@@ -175,7 +175,7 @@ function parseProfileChanges(text: string, profile: UserProfile): { key: Profile
 
 // ---------- Genres, die zum Profil passen ----------
 
-function rankGenres(profile: UserProfile) {
+export function rankGenres(profile: UserProfile) {
   // Eigenschaften, zu denen du eine klare Meinung hast, zählen stärker.
   // Fehlt einem Genre so eine Eigenschaft, gilt sie dort als neutral (5).
   const strong = (Object.keys(profile) as ProfileKey[]).filter((k) => Math.abs(profile[k] - 5) >= 2)
@@ -250,7 +250,7 @@ async function resolveBand(query: string, ctx: Ctx): Promise<{ name: string; inf
   return { name: found.name, info: found.info }
 }
 
-function bandGenres(info: BandInfo): string[] {
+export function bandGenres(info: BandInfo): string[] {
   return [info.genre, ...(info.subgenre ? info.subgenre.split(/,\s*/) : [])]
     .map((g) => g.toLowerCase().trim())
     .filter((g) => g && g !== "unbekannt")
