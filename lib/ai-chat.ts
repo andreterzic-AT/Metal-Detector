@@ -1,10 +1,10 @@
 import type { BandInfo } from "./bands"
 import { findBand } from "./band-source"
-import { bandGenres, rankGenres, type ChatAction, type LastBand } from "./chat"
+import { bandGenres, genreRecommendations, rankGenres, type ChatAction, type LastBand } from "./chat"
 import { AI_LIMITS, AI_MODELS, type AiModelKey } from "./ai-tools"
 import { calculateMatch } from "./match"
 import { getPropertyLabel, type ProfileKey, type UserProfile } from "./profile"
-import { mbPause, searchByGenre, type GenreBand } from "./web-lookup"
+import { apiPause, searchByGenre, type GenreBand } from "./web-lookup"
 import {
   addToWatchlist,
   findOnWatchlist,
@@ -126,21 +126,13 @@ async function runTool(name: string, input: Record<string, unknown>, deps: AiDep
       const genres = bandGenres(band.info).slice(0, 2)
       const bands: GenreBand[] = []
       for (const [i, g] of genres.entries()) {
-        if (i > 0) await mbPause()
+        if (i > 0) await apiPause()
         bands.push(...(await searchByGenre(g, 5, [band.name, ...bands.map((b) => b.name)])))
       }
       return { result: { based_on: band.name, genres, similar_bands: bands }, actions: bands.slice(0, 6).map((b) => bandChip(b.name)) }
     }
     case "recommend_bands": {
-      const top = rankGenres(profile).slice(0, 3)
-      const out = []
-      const taken: string[] = []
-      for (const [i, g] of top.entries()) {
-        if (i > 0) await mbPause()
-        const bands = await searchByGenre(g.genre, 3, taken)
-        taken.push(...bands.map((b) => b.name))
-        out.push({ genre: g.genre, genre_match_percent: g.percent, bands })
-      }
+      const out = (await genreRecommendations(profile)).map((r) => ({ genre: r.genre, genre_match_percent: r.percent, bands: r.bands }))
       const neutral = Object.values(profile).every((v) => v === 5)
       return {
         result: { profile_is_still_neutral: neutral, recommendations: out },
@@ -310,7 +302,7 @@ export class AiChat {
         return { text: answer || "🤘", actions: dedupe(actions), model: res.model, newConversation }
       }
 
-      // Werkzeuge nacheinander ausführen (MusicBrainz erlaubt nur ~1 Anfrage pro Sekunde)
+      // Werkzeuge nacheinander ausführen (schont die Wikimedia-Server)
       const results: Block[] = []
       const lastRound = round === AI_LIMITS.maxToolRounds
       for (const t of toolUses) {

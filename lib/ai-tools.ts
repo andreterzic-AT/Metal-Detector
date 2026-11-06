@@ -21,7 +21,7 @@ export const SYSTEM_PROMPT = `Du bist der "Metal Detector", ein lockerer, kenntn
 
 Worum es in der App geht:
 - Der Nutzer hat ein Musikprofil mit rund 50 Eigenschaften (Sound, Themen, Texte/Ideologie, Live). Jede ist 0-10 bewertet: 0 = mag ich nicht, 5 = neutral, 10 = davon will ich viel.
-- Die App schätzt Band-Profile aus Web-Daten (MusicBrainz-Genres, Wikipedia) und berechnet eine Übereinstimmung in Prozent: 80%+ Premium-Treffer, 70-79% stark, 60-69% gut, 50-59% testweise anhören, unter 50% nicht empfohlen.
+- Die App schätzt Band-Profile aus Web-Daten (Genres von Wikidata, Texte von Wikipedia) und berechnet eine Übereinstimmung in Prozent: 80%+ Premium-Treffer, 70-79% stark, 60-69% gut, 50-59% testweise anhören, unter 50% nicht empfohlen.
 - Es gibt eine Merkliste für Bands, die der Nutzer anhören will.
 
 So arbeitest du:
@@ -55,13 +55,13 @@ export const AI_TOOLS: AiToolDef[] = [
   {
     name: "analyze_band",
     description:
-      "Sucht eine Band im Web (MusicBrainz + Wikipedia), schätzt ihr Profil und berechnet die Übereinstimmung mit dem Profil des Nutzers. Zeigt die Band außerdem in der Ampel der App an. Liefert Genres, Herkunft, Beschreibung, Themen, Match-Prozent, passende und unpassende Eigenschaften sowie Live-Werte.",
+      "Sucht eine Band im Web (Wikipedia + Wikidata), schätzt ihr Profil und berechnet die Übereinstimmung mit dem Profil des Nutzers. Zeigt die Band außerdem in der Ampel der App an. Liefert Genres, Herkunft, Beschreibung, Themen, Match-Prozent, passende und unpassende Eigenschaften sowie Live-Werte.",
     input_schema: obj({ name: bandName }, ["name"]),
     strict: true,
   },
   {
     name: "find_similar_bands",
-    description: "Findet Bands mit ähnlichen Genres wie die angegebene Band (über MusicBrainz-Genre-Tags, bekanntere zuerst).",
+    description: "Findet Bands mit ähnlichen Genres wie die angegebene Band (über Wikidata-Genres, bekanntere zuerst).",
     input_schema: obj({ name: bandName }, ["name"]),
     strict: true,
   },

@@ -3,29 +3,28 @@ import type { UserProfile } from "./profile"
 import { genreRules, overrideRules, themeKeywords } from "./genre-rules"
 
 /*
- * Holt Band-Infos kostenlos aus dem Web:
- *   1. MusicBrainz  → Band finden, Genres/Tags, Land, Spotify-Link, Wikidata-ID
- *   2. Wikidata     → passende Wikipedia-Artikel (deutsch + englisch)
- *   3. Wikipedia    → deutsche Kurzbeschreibung + englischer Artikel für Textthemen
+ * Holt Band-Infos kostenlos aus dem Web – nur aus Quellen, die kommerziell genutzt werden dürfen:
+ *   1. Wikipedia-Suche → findet die richtige Band (auch bei mehrdeutigen Namen wie "Ghost")
+ *   2. Wikidata (CC0)  → Genres, Herkunftsland, Gründungsjahr, Spotify-Link
+ *   3. Wikipedia-Text  → weitere Genre-Hinweise + Textthemen (wir zeigen nur kurze Auszüge mit Quellenlink)
  * Daraus wird mit den Regeln aus genre-rules.ts ein Profil geschätzt.
  */
 
-const MB = "https://musicbrainz.org/ws/2"
-const CACHE_KEY = "metal-detector-web-cache-v1"
+const WIKIDATA_API = "https://www.wikidata.org/w/api.php"
+const SPARQL = "https://query.wikidata.org/sparql"
+const CACHE_KEY = "metal-detector-web-cache-v2"
 const CACHE_DAYS = 30
+// Wikimedia bittet Apps, sich zu erkennen zu geben (Browser dürfen den User-Agent nicht setzen)
+const API_USER_AGENT = "MetalDetector/1.0 (https://andreterzic-at.github.io/Metal-Detector/)"
 
-type MbTag = { name: string; count?: number }
-type MbArtist = {
+type Tag = { name: string; count: number }
+type Claims = Record<string, { mainsnak: { datavalue?: { value: unknown } } }[]>
+type WdEntity = {
   id: string
-  name: string
-  score?: number
-  type?: string
-  country?: string
-  disambiguation?: string
-  "life-span"?: { begin?: string; end?: string; ended?: boolean }
-  tags?: MbTag[]
-  genres?: MbTag[]
-  relations?: { type: string; url?: { resource: string } }[]
+  labels?: Record<string, { value: string }>
+  descriptions?: Record<string, { value: string }>
+  sitelinks?: Record<string, { title: string }>
+  claims?: Claims
 }
 
 export type WebBandResult =
@@ -37,89 +36,127 @@ export type WebBandResult =
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
-async function getJson<T>(url: string, retries = 2): Promise<T> {
-  const res = await fetch(url, { headers: { Accept: "application/json" } })
-  // MusicBrainz erlaubt ca. 1 Anfrage pro Sekunde – bei 503 kurz warten und nochmal
-  if ((res.status === 503 || res.status === 429) && retries > 0) {
-    await sleep(1200)
-    return getJson<T>(url, retries - 1)
+async function getJson<T>(url: string, retries = 3, delay = 1): Promise<T> {
+  let res: Response
+  try {
+    res = await fetch(url, { headers: { Accept: "application/json", "Api-User-Agent": API_USER_AGENT } })
+  } catch (e) {
+    // Kurzer Verbindungsabbruch → einmal nachfassen
+    if (retries <= 0) throw e
+    await sleep(1000)
+    return getJson<T>(url, 0, delay)
+  }
+  // Wikimedia bremst bei zu vielen Anfragen – kurz warten und nochmal
+  if ((res.status === 429 || res.status === 503) && retries > 0) {
+    const wait = Math.min(Number(res.headers.get("Retry-After")) || delay, 5)
+    await sleep(wait * 1000)
+    return getJson<T>(url, retries - 1, delay * 2)
   }
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
   return res.json() as Promise<T>
 }
 
+const qs = (params: Record<string, string | number>) =>
+  new URLSearchParams(Object.entries(params).map(([k, v]) => [k, String(v)])).toString()
+
 const normalize = (s: string) =>
   s
     .toLowerCase()
     .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
+    .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-z0-9]/g, "")
-
-const isMetalish = (tags: MbTag[] = []) =>
-  tags.some((t) => /metal|core|rock|grind|doom|sludge|djent|punk/.test(t.name.toLowerCase()))
 
 const clamp = (n: number) => Math.max(0, Math.min(10, Math.round(n)))
 
-// ---------- 1. MusicBrainz ----------
+/** IDs aus einer Wikidata-Eigenschaft lesen (z. B. P136 = Genre) */
+const claimIds = (claims: Claims | undefined, prop: string): string[] =>
+  (claims?.[prop] ?? [])
+    .map((c) => (c.mainsnak.datavalue?.value as { id?: string } | undefined)?.id)
+    .filter((id): id is string => Boolean(id))
 
-async function findArtist(query: string): Promise<MbArtist | null> {
-  const q = encodeURIComponent(`artist:"${query.replace(/"/g, "")}"`)
-  const data = await getJson<{ artists: MbArtist[] }>(`${MB}/artist/?query=${q}&fmt=json&limit=10`)
-  const candidates = (data.artists || []).filter((a) => (a.score ?? 0) >= 70)
-  if (candidates.length === 0) return null
+const claimString = (claims: Claims | undefined, prop: string): string | undefined => {
+  const v = claims?.[prop]?.[0]?.mainsnak.datavalue?.value
+  return typeof v === "string" ? v : undefined
+}
 
+const claimYear = (claims: Claims | undefined, prop: string): string | undefined => {
+  const v = claims?.[prop]?.[0]?.mainsnak.datavalue?.value as { time?: string } | undefined
+  return v?.time?.match(/^[+-](\d{4})/)?.[1]
+}
+
+// ---------- 1. Band finden (Wikipedia-Suche) ----------
+
+type SearchPage = { title: string; index: number; description?: string; pageprops?: { wikibase_item?: string } }
+
+const MUSIC_DESC = /\b(band|musician|singer|rapper|group|duo|trio|project|supergroup|artist|guitarist|vocalist|drummer|bassist|composer|orchestra)\b/i
+const NOT_ARTIST_DESC = /\b(album|song|single|discography|list|tour|video|film|documentary|compilation|members|ep|concert|festival|disambiguation|topics)\b/i
+
+async function findArtist(query: string): Promise<{ title: string; qid: string } | null> {
   const wanted = normalize(query)
-  // Bewertung: exakter Name > Metal-Tags > Anzahl Tags > MusicBrainz-Score
-  const rank = (a: MbArtist) =>
-    (normalize(a.name) === wanted ? 1000 : 0) +
-    (isMetalish(a.tags) ? 500 : 0) +
-    Math.min((a.tags || []).reduce((s, t) => s + (t.count ?? 1), 0), 100) +
-    (a.score ?? 0)
-
-  return [...candidates].sort((a, b) => rank(b) - rank(a))[0]
-}
-
-async function getArtistDetails(id: string): Promise<MbArtist> {
-  await sleep(1100) // Rate-Limit von MusicBrainz einhalten
-  return getJson<MbArtist>(`${MB}/artist/${id}?inc=genres+tags+url-rels&fmt=json`)
-}
-
-// ---------- 2. + 3. Wikidata / Wikipedia ----------
-
-async function getWikiTitles(artist: MbArtist): Promise<{ en?: string; de?: string }> {
-  const wd = artist.relations?.find((r) => r.type === "wikidata")?.url?.resource
-  const qid = wd?.match(/Q\d+/)?.[0]
-  if (qid) {
-    try {
-      const data = await getJson<{ entities: Record<string, { sitelinks?: Record<string, { title: string }> }> }>(
-        `https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${qid}&props=sitelinks&sitefilter=enwiki|dewiki&format=json&origin=*`
-      )
-      const links = data.entities?.[qid]?.sitelinks || {}
-      return { en: links.enwiki?.title, de: links.dewiki?.title }
-    } catch {
-      /* weiter mit Suche */
-    }
-  }
-  // Kein Wikidata-Link → englische Wikipedia direkt durchsuchen
-  try {
-    const data = await getJson<{ query: { search: { title: string }[] } }>(
-      `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(
-        `${artist.name} band`
-      )}&srlimit=1&format=json&origin=*`
+  for (const term of [`${query} band`, query]) {
+    const data = await getJson<{ query?: { pages: SearchPage[] } }>(
+      `https://en.wikipedia.org/w/api.php?${qs({
+        action: "query",
+        generator: "search",
+        gsrsearch: term,
+        gsrlimit: 8,
+        prop: "pageprops|description",
+        ppprop: "wikibase_item",
+        format: "json",
+        formatversion: 2,
+        origin: "*",
+      })}`
     )
-    const title = data.query?.search?.[0]?.title
-    if (title && normalize(title).includes(normalize(artist.name))) return { en: title }
-  } catch {
-    /* ohne Wikipedia weitermachen */
+    const candidates = (data.query?.pages ?? [])
+      .filter((p) => p.pageprops?.wikibase_item && !p.title.startsWith("List of"))
+      .filter((p) => MUSIC_DESC.test(p.description ?? "") && !NOT_ARTIST_DESC.test(p.description ?? ""))
+      .map((p) => {
+        const base = normalize(p.title.replace(/\s*\(.*\)\s*$/, ""))
+        // Exakter Name ("Ghost (Swedish band)" → "ghost") schlägt Namensähnlichkeit, dann die Suchreihenfolge
+        const score = (base === wanted ? 1000 : base.startsWith(wanted) || wanted.startsWith(base) ? 300 : 0) - p.index * 10
+        return { title: p.title, qid: p.pageprops!.wikibase_item!, score, base }
+      })
+      .filter((c) => c.score > 0 || normalize(c.title).includes(wanted))
+      .sort((a, b) => b.score - a.score)
+    if (candidates.length) return candidates[0]
   }
-  return {}
+  return null
 }
+
+// ---------- 2. Wikidata ----------
+
+async function getEntities(ids: string[], props: string, languages = "de|en"): Promise<Record<string, WdEntity>> {
+  if (ids.length === 0) return {}
+  const data = await getJson<{ entities: Record<string, WdEntity> }>(
+    `${WIKIDATA_API}?${qs({
+      action: "wbgetentities",
+      ids: ids.slice(0, 50).join("|"),
+      props,
+      languages,
+      sitefilter: "enwiki|dewiki",
+      format: "json",
+      origin: "*",
+    })}`
+  )
+  return data.entities ?? {}
+}
+
+const label = (e: WdEntity | undefined, lang: "en" | "de") => e?.labels?.[lang]?.value ?? e?.labels?.[lang === "en" ? "de" : "en"]?.value
+
+// ---------- 3. Wikipedia ----------
 
 async function getEnglishArticle(title: string): Promise<string> {
   const data = await getJson<{ query: { pages: { extract?: string }[] } }>(
-    `https://en.wikipedia.org/w/api.php?action=query&prop=extracts&explaintext=1&redirects=1&formatversion=2&titles=${encodeURIComponent(
-      title
-    )}&format=json&origin=*`
+    `https://en.wikipedia.org/w/api.php?${qs({
+      action: "query",
+      prop: "extracts",
+      explaintext: 1,
+      redirects: 1,
+      formatversion: 2,
+      titles: title,
+      format: "json",
+      origin: "*",
+    })}`
   )
   return data.query?.pages?.[0]?.extract || ""
 }
@@ -138,8 +175,10 @@ async function getSummary(lang: "de" | "en", title: string): Promise<{ text: str
 
 // ---------- Profil berechnen ----------
 
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+
 const wordRegex = (w: string) => {
-  const esc = w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+  const esc = escapeRe(w)
   // kurze Wörter nur als ganzes Wort (sonst trifft "war" auch "warm"), lange auch als Wortanfang
   return w.length < 5 ? new RegExp(`\\b${esc}s?\\b`, "g") : new RegExp(`\\b${esc}`, "g")
 }
@@ -163,13 +202,32 @@ function analyzeText(article: string) {
   return { values, found, sentenceCount: sentences.length }
 }
 
-function profileFromTags(tags: MbTag[]) {
+// Zu allgemeine Begriffe, die im Artikeltext ständig vorkommen, zählen dort nicht als Genre
+const NOT_FROM_ARTICLE = new Set(["rock", "epic", "space", "cyber", "occult", "satanic", "celtic", "hardcore", "industrial"])
+
+/** Genres, die im Wikipedia-Artikel mehrfach erwähnt werden (mit Häufigkeit als Gewicht) */
+function genresFromArticle(article: string): Tag[] {
+  const text = article.toLowerCase()
+  const tags: Tag[] = []
+  for (const rule of genreRules) {
+    if (NOT_FROM_ARTICLE.has(rule.match)) continue
+    const re = new RegExp(`(^|[^a-z])${escapeRe(rule.match).replace(/-/g, "[- ]?")}(?=[^a-z]|$)`, "g")
+    const hits = text.match(re)?.length ?? 0
+    if (hits >= 2) tags.push({ name: rule.match, count: Math.min(hits, 4) })
+  }
+  // Christliche Bands erkennen (nur eindeutige Begriffe, nicht "anti-christian")
+  const christian = (text.match(/(^|[^-a-z])(christian metal|christian rock|unblack metal|christian metalcore)/g) ?? []).length
+  if (christian >= 1) tags.push({ name: "christian metal", count: 3 })
+  return tags
+}
+
+function profileFromTags(tags: Tag[]) {
   const sums: Record<string, { total: number; weight: number }> = {}
   const matched = new Set<string>()
 
   for (const tag of tags) {
     const name = tag.name.toLowerCase()
-    const weight = Math.max(tag.count ?? 1, 1)
+    const weight = Math.max(tag.count, 1)
     for (const rule of genreRules) {
       if (!new RegExp(`(^|[^a-z])${rule.match.replace(/[-]/g, "[- ]?")}`).test(name)) continue
       matched.add(rule.match)
@@ -239,34 +297,37 @@ export async function lookupBand(query: string): Promise<WebBandResult> {
   const cached = getCachedBand(query)
   if (cached) return { status: "found", band: cached }
 
-  let artist: MbArtist | null
+  let artist: { title: string; qid: string } | null
   try {
     artist = await findArtist(query)
   } catch (e) {
     return { status: "error", message: e instanceof Error ? e.message : "Netzwerkfehler" }
   }
   if (!artist) return { status: "not-found" }
+  // Fällt Wikidata kurz aus, geht es mit den Genres aus dem Wikipedia-Artikel weiter
+  const entity: WdEntity =
+    (await getEntities([artist.qid], "claims|sitelinks|labels|descriptions").catch(() => ({}) as Record<string, WdEntity>))[artist.qid] ??
+    { id: artist.qid }
 
-  let details: MbArtist = artist
-  try {
-    details = await getArtistDetails(artist.id)
-  } catch {
-    /* mit den Suchdaten weitermachen */
-  }
+  const claims = entity.claims
+  const genreIds = claimIds(claims, "P136")
+  // Bands: Herkunftsland (P495); Personen: Staatsangehörigkeit (P27)
+  const countryId = claimIds(claims, "P495")[0] ?? claimIds(claims, "P27")[0]
+  const deTitle = entity.sitelinks?.dewiki?.title
+  const enTitle = entity.sitelinks?.enwiki?.title ?? artist.title
 
-  // Genres (kuratiert) zählen doppelt, Tags (von Nutzern) einfach
-  const tags: MbTag[] = [
-    ...(details.genres || []).map((g) => ({ name: g.name, count: (g.count ?? 1) * 2 })),
-    ...(details.tags || artist.tags || []),
-  ]
-  const tagProfile = profileFromTags(tags)
-
-  const titles = await getWikiTitles(details)
-  const [article, deSummary, enSummary] = await Promise.all([
-    titles.en ? getEnglishArticle(titles.en).catch(() => "") : Promise.resolve(""),
-    titles.de ? getSummary("de", titles.de) : Promise.resolve(null),
-    titles.en ? getSummary("en", titles.en) : Promise.resolve(null),
+  // Genre-Namen, Artikeltext und deutsche Beschreibung gleichzeitig holen
+  const [labels, article, deSummary, enSummary] = await Promise.all([
+    getEntities([...genreIds, ...(countryId ? [countryId] : [])], "labels").catch(() => ({}) as Record<string, WdEntity>),
+    getEnglishArticle(enTitle).catch(() => ""),
+    deTitle ? getSummary("de", deTitle) : Promise.resolve(null),
+    getSummary("en", enTitle),
   ])
+
+  // Wikidata-Genres zählen dreifach, Erwähnungen im Artikel je nach Häufigkeit (1-4)
+  const wikidataGenres = genreIds.map((id) => label(labels[id], "en")?.toLowerCase()).filter((g): g is string => Boolean(g))
+  const tags: Tag[] = [...wikidataGenres.map((name) => ({ name, count: 3 })), ...genresFromArticle(article)]
+  const tagProfile = profileFromTags(tags)
   const textProfile = analyzeText(article)
 
   // Text-Themen heben Werte an (ein Thema, das Wikipedia erwähnt, ist eher stark vorhanden)
@@ -280,34 +341,38 @@ export async function lookupBand(query: string): Promise<WebBandResult> {
     if (tagProfile.matched.includes(rule.match)) Object.assign(profile, rule.values)
   }
 
-  const topGenres = [...(details.genres?.length ? details.genres : tags)]
-    .sort((a, b) => (b.count ?? 0) - (a.count ?? 0))
-    .map((t) => t.name)
+  // Anzeige: zuerst Genres, die wir kennen (Metal, Rock …), dann die übrigen
+  const known = (g: string) => genreRules.some((r) => g.includes(r.match))
+  const allGenres = [...wikidataGenres, ...genresFromArticle(article).sort((a, b) => b.count - a.count).map((t) => t.name)]
     .filter((n, i, arr) => arr.indexOf(n) === i)
-    .slice(0, 5)
+  const topGenres = [...allGenres.filter(known), ...allGenres.filter((g) => !known(g))].slice(0, 5)
 
-  const spotify =
-    details.relations?.map((r) => r.url?.resource || "").find((u) => u.includes("open.spotify.com/artist")) ||
-    `https://open.spotify.com/search/${encodeURIComponent(details.name)}`
+  const spotifyId = claimString(claims, "P1902")
+  const name = label(entity, "en") || artist.title.replace(/\s*\(.*\)\s*$/, "")
+  const spotify = spotifyId
+    ? `https://open.spotify.com/artist/${spotifyId}`
+    : `https://open.spotify.com/search/${encodeURIComponent(name)}`
 
   const summary = deSummary || enSummary
   const shortText = summary ? summary.text.split(/(?<=[.!?])\s+/).slice(0, 3).join(" ") : ""
-  const began = details["life-span"]?.begin?.slice(0, 4)
+  const country = countryId ? label(labels[countryId], "de") : undefined
+  // Bands: Gründung (P571); Personen: Beginn der Schaffenszeit (P2031)
+  const began = claimYear(claims, "P571") ?? claimYear(claims, "P2031")
 
   const band: BandInfo = {
-    name: details.name,
+    name,
     genre: topGenres[0] || "unbekannt",
     subgenre: topGenres.slice(1).join(", ") || undefined,
     attitude: "",
     religion: "",
     themes: textProfile.found.length ? textProfile.found : tagProfile.matched,
     spotify,
-    description: shortText || details.disambiguation || "Keine Beschreibung gefunden.",
-    lyricStyle: [details.country, began ? `seit ${began}` : ""].filter(Boolean).join(", "),
+    description: shortText || entity.descriptions?.de?.value || entity.descriptions?.en?.value || "Keine Beschreibung gefunden.",
+    lyricStyle: [country, began ? `seit ${began}` : ""].filter(Boolean).join(", "),
     profile,
     source: {
       kind: "web",
-      musicbrainz: `https://musicbrainz.org/artist/${details.id}`,
+      wikidata: `https://www.wikidata.org/wiki/${entity.id}`,
       wikipedia: summary?.url || undefined,
       tagCount: tags.length,
       lyricSentences: textProfile.sentenceCount,
@@ -322,34 +387,63 @@ export async function lookupBand(query: string): Promise<WebBandResult> {
 
 export type GenreBand = { name: string; country?: string; tags: string[] }
 
+// Wie unsere Genre-Namen bei Wikidata heißen (geprüft mit echten Wikidata-Daten)
+const WIKIDATA_GENRE_LABELS: Record<string, string[]> = {
+  "heavy metal": ["heavy metal music"],
+  industrial: ["industrial metal"],
+  gothic: ["gothic metal", "gothic rock"],
+  pagan: ["pagan metal"],
+  occult: ["occult rock"],
+  sludge: ["sludge metal"],
+  stoner: ["stoner rock", "stoner metal"],
+  hardcore: ["hardcore punk"],
+  crust: ["crust punk"],
+  "funeral doom": ["funeral doom metal"],
+  space: ["space rock"],
+  cyber: ["cyber metal"],
+  epic: ["epic metal"],
+  rock: ["rock music"],
+  nwobhm: ["new wave of British heavy metal"],
+  "neue deutsche härte": ["Neue Deutsche Härte"],
+  celtic: ["Celtic metal", "celtic metal"],
+  depressive: ["depressive suicidal black metal"],
+}
+
+const capitalizeWords = (s: string) => s.split(" ").map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w)).join(" ")
+
 /**
- * Sucht Bands mit einem bestimmten Genre-Tag auf MusicBrainz.
- * Sortiert nach der Anzahl Tag-Stimmen – bekanntere Bands haben mehr davon.
+ * Sucht bekannte Bands eines Genres auf Wikidata.
+ * Sortiert nach der Zahl der Wikipedia-Sprachversionen – bekanntere Bands zuerst.
  */
 export async function searchByGenre(genre: string, limit = 8, exclude: string[] = []): Promise<GenreBand[]> {
-  const q = encodeURIComponent(`tag:"${genre.replace(/"/g, "")}" AND type:group`)
-  const data = await getJson<{ artists: MbArtist[] }>(`${MB}/artist/?query=${q}&fmt=json&limit=100`)
+  const g = genre.trim().toLowerCase().replace(/["\\]/g, "")
+  if (!g) return []
+  const base = WIKIDATA_GENRE_LABELS[g] ?? [g]
+  const variants = [...new Set(base.flatMap((v) => [v, v[0].toUpperCase() + v.slice(1), capitalizeWords(v)]))]
+  const query = `SELECT DISTINCT ?band ?bandLabel ?desc ?links WHERE {
+  VALUES ?lbl { ${variants.map((v) => `"${v}"@en`).join(" ")} }
+  ?genre rdfs:label ?lbl .
+  ?band wdt:P136 ?genre ; wdt:P31 wd:Q215380 ; wikibase:sitelinks ?links .
+  OPTIONAL { ?band schema:description ?desc FILTER(LANG(?desc) = "de") }
+  SERVICE wikibase:label { bd:serviceParam wikibase:language "en,de". }
+} ORDER BY DESC(?links) LIMIT ${limit + exclude.length + 5}`
+  const data = await getJson<{ results: { bindings: Record<string, { value: string }>[] } }>(
+    `${SPARQL}?${qs({ query, format: "json" })}`
+  )
   const skip = new Set(exclude.map(normalize))
   const seen = new Set<string>()
-  return (data.artists || [])
-    .filter((a) => {
-      const key = normalize(a.name)
-      if (!key || skip.has(key) || seen.has(key)) return false
+  return data.results.bindings
+    .map((b) => ({ name: b.bandLabel?.value ?? "", desc: b.desc?.value }))
+    .filter((b) => {
+      const key = normalize(b.name)
+      // Ohne Namen liefert Wikidata nur die ID (z. B. "Q123") – solche Treffer überspringen
+      if (!key || /^q\d+$/.test(key) || skip.has(key) || seen.has(key)) return false
       seen.add(key)
       return true
     })
-    .map((a) => ({ a, votes: (a.tags || []).reduce((s, t) => s + (t.count ?? 0), 0) }))
-    .sort((x, y) => y.votes - x.votes)
     .slice(0, limit)
-    .map(({ a }) => ({
-      name: a.name,
-      country: a.country,
-      tags: (a.tags || [])
-        .sort((x, y) => (y.count ?? 0) - (x.count ?? 0))
-        .map((t) => t.name)
-        .slice(0, 3),
-    }))
+    .map((b) => ({ name: b.name, tags: b.desc ? [b.desc] : [] }))
 }
 
-/** Kurze Pause, damit mehrere MusicBrainz-Anfragen hintereinander erlaubt sind */
-export const mbPause = () => sleep(1100)
+/** Kurze Pause zwischen mehreren Abfragen, damit Wikidata uns nicht bremst */
+export const apiPause = () => sleep(300)

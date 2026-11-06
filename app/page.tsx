@@ -105,7 +105,7 @@ export default function MetalDetectorPage() {
       id: "welcome",
       role: "assistant",
       content:
-        "Hey Kumpel! 🤘 Willkommen beim Metal Detector!\n\nIch bin dein persönlicher Musik-Guide mit intelligenter Profil-Analyse. Öffne die Einstellungen (Button unter der Ampel) und erstelle dein persönliches Musikprofil mit dem Bewertungssystem (0 = mag ich nicht, 5 = neutral, 10 = davon will ich viel).\n\nDann kannst du nach jeder beliebigen Band suchen – ich hole mir die Infos aus dem Web (MusicBrainz & Wikipedia) und sage dir, wie gut sie zu dir passen! 🎸\n\nOder schreib mir einfach: „Wie passt Sabaton zu mir?“, „Bands wie Nightwish“, „Empfiehl mir was“ oder „Ich hasse Growls“ 💬",
+        "Hey Kumpel! 🤘 Willkommen beim Metal Detector!\n\nIch bin dein persönlicher Musik-Guide mit intelligenter Profil-Analyse. Öffne die Einstellungen (Button unter der Ampel) und erstelle dein persönliches Musikprofil mit dem Bewertungssystem (0 = mag ich nicht, 5 = neutral, 10 = davon will ich viel).\n\nDann kannst du nach jeder beliebigen Band suchen – ich hole mir die Infos aus dem Web (Wikipedia & Wikidata) und sage dir, wie gut sie zu dir passen! 🎸\n\nOder schreib mir einfach: „Wie passt Sabaton zu mir?“, „Bands wie Nightwish“, „Empfiehl mir was“ oder „Ich hasse Growls“ 💬",
       timestamp: new Date(),
       actions: [
         { label: "💡 Empfiehl mir was", type: "say", value: "Empfiehl mir was" },
@@ -178,7 +178,7 @@ export default function MetalDetectorPage() {
 
     let links = `[🎧 Auf Spotify anhören](${analysis.spotifyLink})`
     if (info.source?.wikipedia) links += `\n[📖 Wikipedia](${info.source.wikipedia})`
-    if (info.source) links += `\n[🗂️ MusicBrainz](${info.source.musicbrainz})`
+    if (info.source?.wikidata) links += `\n[🗂️ Wikidata](${info.source.wikidata})`
     addMessage("assistant", `${analysis.explanation}\n\n${analysis.scoreBreakdown}\n\n${links}`, [
       { label: "❤️ Merken", type: "watch", value: name },
       { label: "🔎 Ähnliche Bands", type: "say", value: `Bands wie ${name}` },
@@ -667,6 +667,22 @@ export default function MetalDetectorPage() {
           </Card>
         </div>
       </div>
+      <footer className="text-center text-[11px] text-zinc-500 px-4 pb-4">
+        Band-Daten:{" "}
+        <a href="https://www.wikidata.org" target="_blank" rel="noopener noreferrer" className="underline">
+          Wikidata
+        </a>{" "}
+        (CC0) · Beschreibungen:{" "}
+        <a href="https://de.wikipedia.org" target="_blank" rel="noopener noreferrer" className="underline">
+          Wikipedia
+        </a>{" "}
+        (
+        <a href="https://creativecommons.org/licenses/by-sa/4.0/deed.de" target="_blank" rel="noopener noreferrer" className="underline">
+          CC BY-SA 4.0
+        </a>
+        ) · Profile werden automatisch geschätzt
+      </footer>
+
       <WatchlistDialog
         open={isWatchlistOpen}
         onOpenChange={setIsWatchlistOpen}

@@ -3,7 +3,7 @@ import { findBand } from "./band-source"
 import { genreRules } from "./genre-rules"
 import { calculateMatch } from "./match"
 import { getPropertyLabel, type ProfileKey, type UserProfile } from "./profile"
-import { mbPause, searchByGenre, type GenreBand } from "./web-lookup"
+import { apiPause, searchByGenre, type GenreBand } from "./web-lookup"
 import { findOnWatchlist, type WatchItem } from "./watchlist"
 
 /*
@@ -270,7 +270,7 @@ async function similarBands(query: string, ctx: Ctx): Promise<ChatOutcome> {
   const results: GenreBand[] = []
   try {
     for (const [i, g] of genres.entries()) {
-      if (i > 0) await mbPause()
+      if (i > 0) await apiPause()
       const list = await searchByGenre(g, 5, [band.name, ...results.map((r) => r.name)])
       results.push(...list)
     }
@@ -291,17 +291,28 @@ async function similarBands(query: string, ctx: Ctx): Promise<ChatOutcome> {
   }
 }
 
-async function recommend(ctx: Ctx): Promise<ChatOutcome> {
-  const top = rankGenres(ctx.profile).slice(0, 3)
-  const results: { genre: string; bands: GenreBand[] }[] = []
+/**
+ * Die am besten passenden Genres mit je ein paar bekannten Bands.
+ * Genres ohne Treffer werden übersprungen, dann kommt das nächstbeste dran.
+ */
+export async function genreRecommendations(profile: UserProfile, wanted = 3, perGenre = 3) {
+  const results: { genre: string; percent: number; bands: GenreBand[] }[] = []
   const taken: string[] = []
+  for (const g of rankGenres(profile).slice(0, wanted + 3)) {
+    if (results.length >= wanted) break
+    if (results.length > 0 || taken.length > 0) await apiPause()
+    const bands = await searchByGenre(g.genre, perGenre, taken)
+    if (bands.length === 0) continue
+    taken.push(...bands.map((b) => b.name))
+    results.push({ genre: g.genre, percent: g.percent, bands })
+  }
+  return results
+}
+
+async function recommend(ctx: Ctx): Promise<ChatOutcome> {
+  let results: Awaited<ReturnType<typeof genreRecommendations>>
   try {
-    for (const [i, g] of top.entries()) {
-      if (i > 0) await mbPause()
-      const bands = await searchByGenre(g.genre, 3, taken)
-      taken.push(...bands.map((b) => b.name))
-      results.push({ genre: g.genre, bands })
-    }
+    results = await genreRecommendations(ctx.profile)
   } catch {
     return { replies: [{ text: "📡 Ich komme gerade nicht ins Web. Versuch es gleich nochmal." }] }
   }
@@ -309,9 +320,9 @@ async function recommend(ctx: Ctx): Promise<ChatOutcome> {
   let text = isNeutralProfile(ctx.profile)
     ? "Dein Profil steht noch überall auf 5 (neutral) – erzähl mir, was du magst („Ich liebe Melodie“, „Keine Growls“), dann werden die Tipps genauer!\n\nHier ein paar Vorschläge zum Start:\n\n"
     : "Basierend auf deinem Profil passen diese Richtungen am besten zu dir:\n\n"
+  if (results.length === 0) return { replies: [{ text: "Ich habe gerade keine passenden Bands gefunden 🤔 Versuch es gleich nochmal." }] }
   for (const r of results) {
-    const percent = top.find((t) => t.genre === r.genre)?.percent
-    text += `**${r.genre}** (${percent}%)\n${r.bands.length ? formatBandList(r.bands) : "• (nichts gefunden)"}\n\n`
+    text += `**${r.genre}** (${r.percent}%)\n${formatBandList(r.bands)}\n\n`
   }
   text += "Tipp eine Band an, dann prüfe ich sie genau 👇"
   return { replies: [{ text, actions: results.flatMap((r) => r.bands).map((b) => bandAction(b.name)) }] }

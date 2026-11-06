@@ -3,7 +3,7 @@ import type { UserProfile } from "./profile"
 type Partial10 = Partial<UserProfile>
 
 /**
- * Genre-Regeln: Wenn eine Band ein passendes Genre/Tag auf MusicBrainz hat,
+ * Genre-Regeln: Wenn eine Band ein passendes Genre auf Wikidata hat (oder es im Wikipedia-Artikel oft vorkommt),
  * fließen diese Werte (gewichtet nach Tag-Häufigkeit) in ihr Profil ein.
  * Mehrere Genres werden gemittelt, z. B. "melodic death metal" trifft
  * sowohl "melodic death metal" als auch "death metal".
@@ -81,7 +81,7 @@ export const overrideRules: { match: string; values: Partial10 }[] = [
  */
 export const themeKeywords: { keys: (keyof UserProfile)[]; words: string[]; label: string }[] = [
   { keys: ["natur"], label: "Natur", words: ["nature", "environment", "environmental", "ecolog", "climate", "forest", "wilderness"] },
-  { keys: ["mythologie"], label: "Mythologie", words: ["mytholog", "norse", "odin", "thor", "valhalla", "celtic", "greek myth", "legend"] },
+  { keys: ["mythologie"], label: "Mythologie", words: ["mytholog", "norse", "odin", "thor", "valhalla", "greek myth", "vikings", "pagan gods"] },
   { keys: ["heidentum"], label: "Heidentum", words: ["pagan", "heathen", "paganism"] },
   { keys: ["philosophie"], label: "Philosophie", words: ["philosoph", "metaphysic", "consciousness"] },
   { keys: ["existenzialismus"], label: "Existenzialismus", words: ["existential", "meaning of life", "mortality"] },
@@ -90,7 +90,7 @@ export const themeKeywords: { keys: (keyof UserProfile)[]; words: string[]; labe
   { keys: ["verlustTrauer"], label: "Verlust und Trauer", words: ["grief", "loss", "mourning", "bereavement", "sorrow"] },
   { keys: ["hoffnung", "hoffnungErloesung"], label: "Hoffnung", words: ["hope", "redemption", "uplifting", "positive message", "optimis"] },
   { keys: ["gesellschaftskritik"], label: "Gesellschaftskritik", words: ["politic", "social issue", "social commentary", "corruption", "capitalism", "government", "protest", "injustice", "activism", "society"] },
-  { keys: ["geschichte"], label: "Geschichte", words: ["histor", "world war", "ancient", "medieval", "empire"] },
+  { keys: ["geschichte"], label: "Geschichte", words: ["historical", "world war", "ancient", "medieval", "military history", "historic battles"] },
   { keys: ["krieg"], label: "Krieg", words: ["war", "warfare", "battle", "military", "soldier"] },
   { keys: ["scienceFiction"], label: "Science Fiction", words: ["science fiction", "sci-fi", "futuristic", "dystopi", "cyberpunk", "alien"] },
   { keys: ["fantasy"], label: "Fantasy", words: ["fantasy", "tolkien", "dragon", "sword and sorcery", "fairy tale", "fairytale"] },

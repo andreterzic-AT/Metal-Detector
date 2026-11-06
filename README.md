@@ -24,6 +24,15 @@ npm run build      # erzeugt die fertige App im Ordner out/
 Die App startet dann im Vollbild ohne Browserleiste, funktioniert auch offline,
 und dein Profil sowie deine Merkliste werden auf dem Gerät gespeichert.
 
+## Datenquellen und Lizenzen
+
+- **Wikipedia-Suche** findet die Band (auch bei mehrdeutigen Namen wie „Ghost“).
+- **Wikidata** (CC0, frei auch für kommerzielle Nutzung): Genres, Herkunft, Gründungsjahr, Spotify-Link,
+  Bands eines Genres (sortiert nach Bekanntheit).
+- **Wikipedia-Texte** (CC BY-SA 4.0): kurze Beschreibung und Textthemen. Die App zeigt nur kurze Auszüge
+  und verlinkt jeweils den Artikel; im Fußbereich stehen Quellen und Lizenz.
+- MusicBrainz wird nicht mehr verwendet (dessen Genre-Tags sind nur nicht-kommerziell freigegeben).
+
 ## KI-Chat einrichten (optional)
 
 Ohne Einrichtung antwortet der Chat mit eingebauter Satzerkennung. Mit KI beantwortet
@@ -59,7 +68,7 @@ In der App erscheint dann in den Profil-Einstellungen die Auswahl **KI-Chat: Aus
 - `lib/chat.ts` – Chat-Engine: erkennt Fragen („Wie passt X zu mir?“, „Bands wie X“, „Ich hasse Growls“) und beantwortet sie
 - `lib/watchlist.ts` + `components/watchlist-dialog.tsx` – Merkliste (auf dem Gerät gespeichert)
 - `lib/band-source.ts` – Band suchen: zuerst Web, sonst eingebaute Liste
-- `lib/web-lookup.ts` – Bandsuche im Web (MusicBrainz + Wikipedia), mit Zwischenspeicher auf dem Gerät
+- `lib/web-lookup.ts` – Bandsuche im Web (Wikipedia-Suche + Wikidata-Genres, beides kommerziell nutzbar), mit Zwischenspeicher auf dem Gerät
 - `lib/genre-rules.ts` – Regeln, die Genres und Textthemen in Profilwerte übersetzen (hier feinjustieren)
 - `lib/match.ts` – Berechnung der Übereinstimmung
 - `lib/bands.ts` – eingebaute Band-Liste (Fallback ohne Internet)
