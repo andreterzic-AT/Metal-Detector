@@ -192,9 +192,17 @@ function analyzeText(article: string) {
   const values: Partial<UserProfile> = {}
   const found: string[] = []
 
+  const count = (words: string[]) => words.reduce((n, w) => n + (text.match(wordRegex(w))?.length ?? 0), 0)
+  const satanic = count(themeKeywords.find((g) => g.keys.includes("satanischeSymbolik"))?.words ?? [])
   for (const group of themeKeywords) {
-    const hits = group.words.reduce((n, w) => n + (text.match(wordRegex(w))?.length ?? 0), 0)
+    const hits = count(group.words)
     if (hits === 0) continue
+    // Spielt eine Band mit satanischer Symbolik auf das Christentum an, ist das meist Parodie/Kritik,
+    // keine christliche Botschaft → dann nur als "Religion" werten
+    if (group.keys.includes("christlicheThemen") && satanic >= hits) {
+      values.religioeseThemen = Math.max(values.religioeseThemen ?? 0, 7)
+      continue
+    }
     const v = hits >= 5 ? 10 : hits >= 3 ? 9 : hits === 2 ? 8 : 7
     for (const k of group.keys) values[k] = Math.max(values[k] ?? 0, v)
     found.push(group.label)

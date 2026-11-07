@@ -1,0 +1,21 @@
+{
+  "name": "metal-detector/ai-server",
+  "description": "KI-Server für den Metal Detector (leitet Chat-Anfragen sicher an Claude weiter)",
+  "type": "project",
+  "license": "proprietary",
+  "require": {
+    "php": ">=8.1",
+    "anthropic-ai/sdk": "^1.6",
+    "guzzlehttp/guzzle": "^7.9"
+  },
+  "config": {
+    "optimize-autoloader": true,
+    "sort-packages": true,
+    "allow-plugins": {
+      "php-http/discovery": true
+    },
+    "platform": {
+      "php": "8.1.0"
+    }
+  }
+}

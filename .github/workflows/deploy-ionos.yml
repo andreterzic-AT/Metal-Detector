@@ -1,0 +1,118 @@
+name: Deploy zu IONOS
+
+# Bei jedem Push auf master: neue Version auf die TEST-Seite (Baustelle).
+# Auf die LIVE-Seite nur von Hand: Actions → "Deploy zu IONOS" → Run workflow → Ziel "live".
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+    inputs:
+      ziel:
+        description: "Wohin veröffentlichen?"
+        type: choice
+        options: [test, live]
+        default: test
+
+concurrency:
+  group: ionos-${{ github.event.inputs.ziel || 'test' }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      ZIEL: ${{ github.event.inputs.ziel || 'test' }}
+    steps:
+      - name: Einstellungen prüfen
+        id: cfg
+        env:
+          SFTP_HOST: ${{ secrets.IONOS_SFTP_HOST }}
+          SFTP_USER: ${{ secrets.IONOS_SFTP_USER }}
+          SFTP_PASSWORD: ${{ secrets.IONOS_SFTP_PASSWORD }}
+          AI_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          TEST_DIR: ${{ vars.IONOS_TEST_DIR }}
+          TEST_URL: ${{ vars.IONOS_TEST_URL }}
+          LIVE_DIR: ${{ vars.IONOS_LIVE_DIR }}
+          LIVE_URL: ${{ vars.IONOS_LIVE_URL }}
+        run: |
+          if [ "$ZIEL" = "live" ]; then DIR="$LIVE_DIR"; URL="$LIVE_URL"; else DIR="$TEST_DIR"; URL="$TEST_URL"; fi
+          if [ -z "$SFTP_HOST" ] || [ -z "$SFTP_USER" ] || [ -z "$SFTP_PASSWORD" ] || [ -z "$DIR" ] || [ -z "$URL" ]; then
+            echo "::notice::IONOS ($ZIEL) noch nicht eingerichtet – siehe README, Abschnitt 'Veröffentlichen auf IONOS'."
+            echo "ready=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          # Sicherheitsnetz: nie in das Hauptverzeichnis des Webspace schreiben
+          case "$DIR" in /|""|.|./) echo "::error::Zielordner '$DIR' ist zu allgemein. Bitte einen eigenen Ordner angeben."; exit 1;; esac
+          ORIGIN=$(echo "$URL" | sed -E 's#^(https?://[^/]+).*#\1#')
+          BASE_PATH=$(echo "$URL" | sed -E 's#^https?://[^/]+##; s#/+$##')
+          echo "dir=$DIR" >> "$GITHUB_OUTPUT"
+          echo "origin=$ORIGIN" >> "$GITHUB_OUTPUT"
+          echo "base_path=$BASE_PATH" >> "$GITHUB_OUTPUT"
+          echo "ai=$([ -n "$AI_KEY" ] && echo yes || echo no)" >> "$GITHUB_OUTPUT"
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+          echo "Ziel: $ZIEL → Ordner $DIR, Adresse $URL (KI: $([ -n "$AI_KEY" ] && echo an || echo aus))"
+
+      - uses: actions/checkout@v4
+        if: steps.cfg.outputs.ready == 'true'
+
+      - uses: actions/setup-node@v4
+        if: steps.cfg.outputs.ready == 'true'
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: App bauen
+        if: steps.cfg.outputs.ready == 'true'
+        env:
+          NEXT_PUBLIC_BASE_PATH: ${{ steps.cfg.outputs.base_path }}
+          NEXT_PUBLIC_AI_URL: ${{ steps.cfg.outputs.ai == 'yes' && format('{0}/api/chat.php', steps.cfg.outputs.base_path) || '' }}
+        run: |
+          npm ci
+          npm run export-ai
+          npm run build
+
+      - name: KI-Server vorbereiten
+        if: steps.cfg.outputs.ready == 'true'
+        env:
+          AI_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ORIGIN: ${{ steps.cfg.outputs.origin }}
+          DAILY_BUDGET: ${{ vars.AI_DAILY_BUDGET || '1000' }}
+        run: |
+          cd server/api
+          composer install --no-dev --no-interaction --optimize-autoloader
+          # config.php aus den Secrets erzeugen (der Schlüssel erscheint nirgends im Log)
+          php -r '
+            $c = [
+              "anthropic_api_key" => getenv("AI_KEY") ?: "",
+              "allowed_origins"   => [getenv("ORIGIN")],
+              "daily_budget"      => (int) getenv("DAILY_BUDGET"),
+              "opus_cost"         => 25,
+              "per_minute"        => 20,
+            ];
+            file_put_contents("config.php", "<?php\nreturn " . var_export($c, true) . ";\n");
+          '
+          cd ../..
+          mkdir -p site
+          cp -r out/. site/
+          if [ "${{ steps.cfg.outputs.ai }}" = "yes" ]; then cp -r server/api site/api; rm -f site/api/config.example.php; fi
+          echo "Metal Detector – dieser Ordner wird automatisch aus GitHub veröffentlicht." > site/.metal-detector
+
+      - name: Hochladen per SFTP
+        if: steps.cfg.outputs.ready == 'true'
+        env:
+          SFTP_HOST: ${{ secrets.IONOS_SFTP_HOST }}
+          SFTP_USER: ${{ secrets.IONOS_SFTP_USER }}
+          SFTP_PASSWORD: ${{ secrets.IONOS_SFTP_PASSWORD }}
+          DIR: ${{ steps.cfg.outputs.dir }}
+        run: |
+          sudo apt-get install -y -qq lftp > /dev/null
+          LFTP_SET="set sftp:auto-confirm yes; set net:max-retries 3; set net:timeout 30"
+          # Sicherheitsnetz: nur in einen leeren Ordner oder einen, in dem schon der Metal Detector liegt
+          LISTING=$(lftp -u "$SFTP_USER","$SFTP_PASSWORD" -e "$LFTP_SET; cls -1a \"$DIR\" 2>/dev/null; bye" "sftp://$SFTP_HOST" || true)
+          FILES=$(echo "$LISTING" | sed 's#.*/##' | grep -v -E '^(\.|\.\.)?$' || true)
+          if [ -n "$FILES" ] && ! echo "$FILES" | grep -qx '.metal-detector'; then
+            echo "::error::Im Ordner '$DIR' liegen schon andere Dateien (z. B. eine bestehende Webseite). Abbruch, damit nichts überschrieben wird. Bitte einen eigenen, leeren Ordner angeben."
+            exit 1
+          fi
+          # Hochladen; alte Dateien im eigenen Ordner aufräumen, aber die Daten des KI-Servers behalten
+          lftp -u "$SFTP_USER","$SFTP_PASSWORD" -e "$LFTP_SET; mkdir -p \"$DIR\"; mirror -R --delete --parallel=4 --exclude-glob api/data/*.json site/ \"$DIR\"; bye" "sftp://$SFTP_HOST"
+          echo "Fertig: $ZIEL aktualisiert."

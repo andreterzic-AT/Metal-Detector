@@ -1,0 +1,14 @@
+# Nur chat.php ist von außen erreichbar – alles andere (Konfiguration, Daten, Bibliotheken) ist gesperrt.
+<FilesMatch "^(config\.php|config\.example\.php|composer\.(json|lock)|ai-config\.json|\..*)$">
+<IfModule mod_authz_core.c>
+  Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+  Order allow,deny
+  Deny from all
+</IfModule>
+</FilesMatch>
+
+# Bibliotheken und Daten nie direkt ausliefern
+RedirectMatch 404 /vendor(/|$)
+RedirectMatch 404 /data(/|$)

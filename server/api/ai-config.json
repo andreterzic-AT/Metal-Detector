@@ -1,0 +1,253 @@
+{
+ "system": "Du bist der \"Metal Detector\", ein lockerer, kenntnisreicher Metal-Guide in einer Musik-App. Du sprichst Deutsch, duzt den Nutzer und nennst ihn gern \"Kumpel\". 🤘\n\nWorum es in der App geht:\n- Der Nutzer hat ein Musikprofil mit rund 50 Eigenschaften (Sound, Themen, Texte/Ideologie, Live). Jede ist 0-10 bewertet: 0 = mag ich nicht, 5 = neutral, 10 = davon will ich viel.\n- Die App schätzt Band-Profile aus Web-Daten (Genres von Wikidata, Texte von Wikipedia) und berechnet eine Übereinstimmung in Prozent: 80%+ Premium-Treffer, 70-79% stark, 60-69% gut, 50-59% testweise anhören, unter 50% nicht empfohlen.\n- Es gibt eine Merkliste für Bands, die der Nutzer anhören will.\n\nSo arbeitest du:\n- Fakten zu konkreten Bands (Genre, Herkunft, Themen) und jede Übereinstimmung in Prozent holst du IMMER mit dem Werkzeug analyze_band. Erfinde nie Prozentwerte und nenne nur Zahlen aus Werkzeug-Ergebnissen.\n- Für ähnliche Bands find_similar_bands, für persönliche Tipps recommend_bands, für Bands eines Genres bands_by_genre. Wenn du dafür Bands nennst, die nicht aus einem Werkzeug stammen, sag dazu, dass es dein eigener Tipp ist.\n- Äußert der Nutzer Vorlieben oder Abneigungen (\"ich hasse Growls\", \"mehr Melodie\"), passe sein Profil mit update_user_profile an und sag kurz, was du geändert hast. Erhöhe oder senke dabei um 2-3 Punkte bei \"mehr/weniger\", setze 0-2 bei klarer Ablehnung und 8-10 bei klarer Begeisterung.\n- Für die Merkliste nutzt du die watchlist-Werkzeuge.\n- Allgemeines Musikwissen (Genre-Geschichte, Unterschiede zwischen Stilen, Einsteiger-Alben) darfst du aus deinem Wissen beantworten.\n- Wenn ein Werkzeug einen Fehler meldet, sag das ehrlich und schlag vor, es gleich nochmal zu versuchen.\n\nStil:\n- Kurz und lebendig: meist 2-6 Sätze oder eine kurze Liste. Höchstens etwa 150 Wörter.\n- Die App zeigt nur **fett** und Links im Format [Text](URL) an – keine Überschriften, keine Tabellen.\n- Bleib bei Musik. Bei anderen Themen lenkst du freundlich zurück zur Musik.\n\nGültige Profil-Eigenschaften: haerte (Härte), melodie (Melodie), atmosphaere (Atmosphäre), melancholie (Melancholie), technik (Technik), progressive (Progressive Elemente), groove (Groove), cleanVocals (Clean Vocals), growls (Growls), screams (Screams), symphonisch (Symphonische Elemente), liveEnergie (Live-Energie), natur (Natur), mythologie (Mythologie), philosophie (Philosophie), persoenlicheEntwicklung (Persönliche Entwicklung), innereKaempfe (Innere Kämpfe), verlustTrauer (Verlust und Trauer), hoffnung (Hoffnung), gesellschaftskritik (Gesellschaftskritik), geschichte (Geschichte), scienceFiction (Science Fiction), fantasy (Fantasy), krieg (Krieg), horror (Horror), kosmos (Kosmos und Universum), abenteuer (Abenteuer und Reisen), spirituelleNeutralitaet (Spirituelle Neutralität), christlicheThemen (Christliche Themen), religioeseThemen (Religiöse Themen allgemein), hoffnungErloesung (Hoffnung und Erlösung), moralischeWerte (Moralische Werte), innereKaempfeTexte (Innere Kämpfe (in Texten)), existenzialismus (Existenzialismus), nihilismus (Nihilismus), antiReligion (Anti-Religion), gotteslaesterung (Gotteslästerung), satanischeSymbolik (Satanische Symbolik), okkultismus (Okkultismus), heidentum (Heidentum / Paganismus), mystik (Mystik), dunkelheitAesthetik (Dunkelheit als Ästhetik), moshpitFaktor (Moshpit-Faktor), publikumsenergie (Publikumsenergie), buehnenpraesenz (Bühnenpräsenz), publikumsinteraktion (Publikumsinteraktion), festivalTauglichkeit (Festival-Tauglichkeit).",
+ "tools": [
+  {
+   "name": "analyze_band",
+   "description": "Sucht eine Band im Web (Wikipedia + Wikidata), schätzt ihr Profil und berechnet die Übereinstimmung mit dem Profil des Nutzers. Zeigt die Band außerdem in der Ampel der App an. Liefert Genres, Herkunft, Beschreibung, Themen, Match-Prozent, passende und unpassende Eigenschaften sowie Live-Werte.",
+   "input_schema": {
+    "type": "object",
+    "properties": {
+     "name": {
+      "type": "string",
+      "description": "Name der Band, z. B. 'Sabaton'"
+     }
+    },
+    "required": [
+     "name"
+    ],
+    "additionalProperties": false
+   },
+   "strict": true
+  },
+  {
+   "name": "find_similar_bands",
+   "description": "Findet Bands mit ähnlichen Genres wie die angegebene Band (über Wikidata-Genres, bekanntere zuerst).",
+   "input_schema": {
+    "type": "object",
+    "properties": {
+     "name": {
+      "type": "string",
+      "description": "Name der Band, z. B. 'Sabaton'"
+     }
+    },
+    "required": [
+     "name"
+    ],
+    "additionalProperties": false
+   },
+   "strict": true
+  },
+  {
+   "name": "recommend_bands",
+   "description": "Ermittelt die Genres, die am besten zum Profil des Nutzers passen, und sucht dazu bekannte Bands. Für 'Empfiehl mir was'.",
+   "input_schema": {
+    "type": "object",
+    "properties": {},
+    "required": [],
+    "additionalProperties": false
+   },
+   "strict": true
+  },
+  {
+   "name": "bands_by_genre",
+   "description": "Listet bekannte Bands eines Genres, z. B. 'viking metal' oder 'power metal' (englische Genrenamen).",
+   "input_schema": {
+    "type": "object",
+    "properties": {
+     "genre": {
+      "type": "string",
+      "description": "Genre auf Englisch, kleingeschrieben"
+     }
+    },
+    "required": [
+     "genre"
+    ],
+    "additionalProperties": false
+   },
+   "strict": true
+  },
+  {
+   "name": "get_user_profile",
+   "description": "Liefert das aktuelle Musikprofil des Nutzers (alle Werte 0-10) und die dazu am besten passenden Genres.",
+   "input_schema": {
+    "type": "object",
+    "properties": {},
+    "required": [],
+    "additionalProperties": false
+   },
+   "strict": true
+  },
+  {
+   "name": "update_user_profile",
+   "description": "Ändert Werte im Musikprofil des Nutzers. Der Nutzer kann die Änderung in der App rückgängig machen.",
+   "input_schema": {
+    "type": "object",
+    "properties": {
+     "changes": {
+      "type": "array",
+      "description": "Die zu setzenden Werte",
+      "items": {
+       "type": "object",
+       "properties": {
+        "property": {
+         "type": "string",
+         "enum": [
+          "haerte",
+          "melodie",
+          "atmosphaere",
+          "melancholie",
+          "technik",
+          "progressive",
+          "groove",
+          "cleanVocals",
+          "growls",
+          "screams",
+          "symphonisch",
+          "liveEnergie",
+          "natur",
+          "mythologie",
+          "philosophie",
+          "persoenlicheEntwicklung",
+          "innereKaempfe",
+          "verlustTrauer",
+          "hoffnung",
+          "gesellschaftskritik",
+          "geschichte",
+          "scienceFiction",
+          "fantasy",
+          "krieg",
+          "horror",
+          "kosmos",
+          "abenteuer",
+          "spirituelleNeutralitaet",
+          "christlicheThemen",
+          "religioeseThemen",
+          "hoffnungErloesung",
+          "moralischeWerte",
+          "innereKaempfeTexte",
+          "existenzialismus",
+          "nihilismus",
+          "antiReligion",
+          "gotteslaesterung",
+          "satanischeSymbolik",
+          "okkultismus",
+          "heidentum",
+          "mystik",
+          "dunkelheitAesthetik",
+          "moshpitFaktor",
+          "publikumsenergie",
+          "buehnenpraesenz",
+          "publikumsinteraktion",
+          "festivalTauglichkeit"
+         ],
+         "description": "Profil-Eigenschaft"
+        },
+        "value": {
+         "type": "integer",
+         "description": "Neuer Wert von 0 bis 10"
+        }
+       },
+       "required": [
+        "property",
+        "value"
+       ],
+       "additionalProperties": false
+      }
+     }
+    },
+    "required": [
+     "changes"
+    ],
+    "additionalProperties": false
+   },
+   "strict": true
+  },
+  {
+   "name": "watchlist_get",
+   "description": "Liefert die Merkliste des Nutzers mit aktueller Übereinstimmung und ob die Band schon angehört wurde.",
+   "input_schema": {
+    "type": "object",
+    "properties": {},
+    "required": [],
+    "additionalProperties": false
+   },
+   "strict": true
+  },
+  {
+   "name": "watchlist_add",
+   "description": "Setzt eine Band auf die Merkliste.",
+   "input_schema": {
+    "type": "object",
+    "properties": {
+     "name": {
+      "type": "string",
+      "description": "Name der Band, z. B. 'Sabaton'"
+     }
+    },
+    "required": [
+     "name"
+    ],
+    "additionalProperties": false
+   },
+   "strict": true
+  },
+  {
+   "name": "watchlist_remove",
+   "description": "Nimmt eine Band von der Merkliste.",
+   "input_schema": {
+    "type": "object",
+    "properties": {
+     "name": {
+      "type": "string",
+      "description": "Name der Band, z. B. 'Sabaton'"
+     }
+    },
+    "required": [
+     "name"
+    ],
+    "additionalProperties": false
+   },
+   "strict": true
+  },
+  {
+   "name": "watchlist_mark_listened",
+   "description": "Markiert eine Band auf der Merkliste als angehört (oder wieder als nicht angehört).",
+   "input_schema": {
+    "type": "object",
+    "properties": {
+     "name": {
+      "type": "string",
+      "description": "Name der Band, z. B. 'Sabaton'"
+     },
+     "listened": {
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "name",
+     "listened"
+    ],
+    "additionalProperties": false
+   },
+   "strict": true
+  }
+ ],
+ "models": {
+  "haiku": {
+   "id": "claude-haiku-5-5",
+   "label": "Haiku 5.5",
+   "hint": "schnell & sehr günstig"
+  },
+  "opus": {
+   "id": "claude-opus-5-5",
+   "label": "Opus 5.5",
+   "hint": "stärker, aber teurer"
+  }
+ },
+ "limits": {
+  "maxUserChars": 1000,
+  "maxMessages": 40,
+  "maxPayloadChars": 120000,
+  "maxToolRounds": 5
+ }
+}

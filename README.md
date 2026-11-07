@@ -33,38 +33,46 @@ und dein Profil sowie deine Merkliste werden auf dem Gerät gespeichert.
   und verlinkt jeweils den Artikel; im Fußbereich stehen Quellen und Lizenz.
 - MusicBrainz wird nicht mehr verwendet (dessen Genre-Tags sind nur nicht-kommerziell freigegeben).
 
-## KI-Chat einrichten (optional)
+## Veröffentlichen auf IONOS (App + KI-Server)
 
-Ohne Einrichtung antwortet der Chat mit eingebauter Satzerkennung. Mit KI beantwortet
-Claude die Nachrichten und nutzt dabei die Funktionen der App (Band-Analyse, Merkliste, Profil).
+Die App und der KI-Server laufen auf dem eigenen IONOS-Webhosting:
+`https://<deine-adresse>/` ist die App, `https://<deine-adresse>/api/chat.php` der KI-Server (PHP).
+Bei jedem Push geht die neue Version automatisch auf die **Test-Seite**; auf die **Live-Seite** nur per
+Knopfdruck (*Actions → „Deploy zu IONOS“ → Run workflow → Ziel „live“*).
 
-Der API-Schlüssel liegt **nur auf dem eigenen Server** (Cloudflare Worker im Ordner `worker/`),
-nie in der App und nie im Code. Der Server schützt vor hohen Kosten: nur Anfragen von der
-App, höchstens 20 Anfragen pro Minute pro Nutzer, ein Tageslimit für alle zusammen
-(`DAILY_BUDGET` in `worker/wrangler.toml`) und kurze Antworten.
+Der API-Schlüssel liegt **nur auf dem Server** (in `api/config.php`, wird beim Veröffentlichen aus dem
+GitHub-Secret erzeugt), nie in der App und nie im Code. Schutz vor hohen Kosten: nur Anfragen von der
+eigenen Seite, höchstens 20 Anfragen pro Minute pro Nutzer, Tageslimit für alle zusammen, kurze Antworten.
 
-1. **Anthropic:** Auf console.anthropic.com ein Konto anlegen, Guthaben aufladen,
-   unter *Limits* ein **monatliches Ausgabenlimit** setzen und einen **API-Key** erstellen.
-2. **Cloudflare:** Kostenloses Konto auf dash.cloudflare.com anlegen. Einmal *Workers & Pages*
-   öffnen (dabei wird die eigene `….workers.dev`-Adresse festgelegt).
-   - **Account ID** kopieren (steht in der Übersicht rechts bzw. unter *Workers & Pages*).
-   - Unter *My Profile → API Tokens → Create Token* die Vorlage **„Edit Cloudflare Workers“** wählen und den Token kopieren.
-3. **GitHub:** Im Repository unter *Settings → Secrets and variables → Actions → Secrets*
-   drei Secrets anlegen: `ANTHROPIC_API_KEY`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`.
-4. Unter *Actions* den Workflow **„Deploy KI-Server (Cloudflare)“** mit *Run workflow* starten.
-   Im Log steht danach die Adresse, z. B. `https://metal-detector-ai.<name>.workers.dev`.
-5. Unter *Settings → Secrets and variables → Actions → Variables* die Variable
-   `AI_PROXY_URL` mit dieser Adresse anlegen.
-6. Unter *Actions* den Workflow **„Deploy to GitHub Pages“** mit *Run workflow* neu starten.
+**Wichtig:** Die App braucht auf IONOS jeweils einen **eigenen, leeren Ordner** – nie den Ordner einer
+bestehenden Webseite. Der Ablauf bricht ab, wenn im Zielordner fremde Dateien liegen.
 
-In der App erscheint dann in den Profil-Einstellungen die Auswahl **KI-Chat: Aus / Haiku 5.5 / Opus 5.5**.
+1. **IONOS – Ordner und Adressen:** Im Webspace zwei neue Ordner anlegen, z. B. `/metal-detector-test`
+   und `/metal-detector`. Unter *Domains & SSL* je eine Subdomain anlegen (z. B. `test.deine-domain.de`
+   und `app.deine-domain.de`), auf den jeweiligen Ordner zeigen lassen und SSL aktivieren.
+2. **IONOS – PHP-Version:** Für beide Subdomains PHP **8.2 oder neuer** einstellen.
+3. **IONOS – SFTP-Zugang:** Unter *Hosting → SFTP & SSH* Server, Benutzer und Passwort notieren
+   (am besten einen eigenen SFTP-Benutzer anlegen).
+4. **Anthropic:** Auf console.anthropic.com Guthaben aufladen, ein **monatliches Ausgabenlimit** setzen
+   und einen **API-Key** erstellen.
+5. **GitHub – Secrets** (*Settings → Secrets and variables → Actions → Secrets*):
+   `IONOS_SFTP_HOST`, `IONOS_SFTP_USER`, `IONOS_SFTP_PASSWORD`, `ANTHROPIC_API_KEY`.
+6. **GitHub – Variables** (gleiche Seite, Reiter *Variables*):
+   `IONOS_TEST_DIR` = `/metal-detector-test`, `IONOS_TEST_URL` = `https://test.deine-domain.de`,
+   `IONOS_LIVE_DIR` = `/metal-detector`, `IONOS_LIVE_URL` = `https://app.deine-domain.de`.
+   Optional: `AI_DAILY_BUDGET` (Standard 1000; eine Haiku-Anfrage = 1, eine Opus-Anfrage = 25).
+7. *Actions → „Deploy zu IONOS“ → Run workflow → Ziel „test“* starten und die Test-Seite ausprobieren.
+
+Ohne `ANTHROPIC_API_KEY` wird die App ohne KI veröffentlicht (Chat mit eingebauter Satzerkennung).
+In der App lässt sich unter *Profil-Einstellungen* wählen: **KI-Chat Aus / Haiku 5.5 / Opus 5.5**.
 
 ## Struktur
 
 - `app/page.tsx` – Oberfläche
 - `lib/ai-chat.ts` – KI-Chat: schickt das Gespräch an den Server und führt die Werkzeuge aus
-- `lib/ai-tools.ts` – Auftrag (System-Prompt) und Werkzeuge der KI, gemeinsam für App und Server
-- `worker/` – KI-Server (Cloudflare Worker) mit Schlüssel, Limits und Tageslimit
+- `lib/ai-tools.ts` – Auftrag (System-Prompt) und Werkzeuge der KI – hier ändern, dann `npm run export-ai`
+- `server/api/chat.php` – KI-Server (PHP) mit Schlüssel, Limits und Tageslimit; `ai-config.json` erzeugt `npm run export-ai`
+- `.github/workflows/deploy-ionos.yml` – Veröffentlichung auf IONOS (Test automatisch, Live per Knopfdruck)
 - `lib/chat.ts` – Chat-Engine: erkennt Fragen („Wie passt X zu mir?“, „Bands wie X“, „Ich hasse Growls“) und beantwortet sie
 - `lib/watchlist.ts` + `components/watchlist-dialog.tsx` – Merkliste (auf dem Gerät gespeichert)
 - `lib/band-source.ts` – Band suchen: zuerst Web, sonst eingebaute Liste

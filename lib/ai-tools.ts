@@ -2,7 +2,7 @@ import { profileSections } from "./profile"
 
 /*
  * Gemeinsame Definitionen für den KI-Chat.
- * Der Cloudflare Worker schickt SYSTEM_PROMPT und AI_TOOLS an Claude (sie sind dort fest
+ * Der KI-Server (server/api/chat.php) schickt SYSTEM_PROMPT und AI_TOOLS an Claude (sie sind dort fest
  * eingebaut, damit niemand den Server für andere Zwecke missbrauchen kann).
  * Die App führt die Werkzeuge aus – mit denselben Namen wie hier.
  */

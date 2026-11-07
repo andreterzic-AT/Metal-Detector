@@ -13,13 +13,14 @@ import {
 } from "./watchlist"
 
 /*
- * KI-Chat: schickt das Gespräch an den Metal-Detector-Server (Cloudflare Worker),
+ * KI-Chat: schickt das Gespräch an den Metal-Detector-Server (server/api/chat.php),
  * führt die Werkzeuge aus, die Claude anfordert, und gibt die Antwort zurück.
  * Der Gesprächsverlauf wird nur angehängt, nie nachträglich verändert –
  * das verlangt die API, damit Claudes Denk-Blöcke gültig bleiben.
  */
 
-export const AI_URL = (process.env.NEXT_PUBLIC_AI_URL || "").replace(/\/+$/, "")
+/** Adresse des KI-Servers, z. B. "/api/chat.php" (leer = KI-Chat aus) */
+export const AI_URL = process.env.NEXT_PUBLIC_AI_URL || ""
 export const aiAvailable = () => AI_URL.length > 0
 
 // Inhalte kommen 1:1 von der API zurück und werden unverändert wieder mitgeschickt
@@ -224,7 +225,7 @@ export class AiChat {
   private async call(model: AiModelKey): Promise<{ content: Block[]; stop_reason: string | null; model: string }> {
     let res: Response
     try {
-      res = await fetch(`${AI_URL}/chat`, {
+      res = await fetch(AI_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ model, messages: this.history }),
