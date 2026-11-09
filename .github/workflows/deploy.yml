@@ -26,8 +26,10 @@ jobs:
       - run: npm ci
       - run: npm run build
         env:
-          NEXT_PUBLIC_BASE_PATH: /${{ github.event.repository.name }}
-          # Adresse des KI-Servers (GitHub: Settings → Secrets and variables → Actions → Variables)
+          # Mit eigener Domain (Variable PAGES_CUSTOM_DOMAIN, z. B. test.at-teamtools.de) liegt die App direkt
+          # unter der Domain, sonst unter andreterzic-at.github.io/<Repository-Name>/
+          NEXT_PUBLIC_BASE_PATH: ${{ vars.PAGES_CUSTOM_DOMAIN == '' && format('/{0}', github.event.repository.name) || '' }}
+          # Adresse des KI-Servers (Variable AI_PROXY_URL, z. B. https://metal-detector-ai.<name>.workers.dev)
           NEXT_PUBLIC_AI_URL: ${{ vars.AI_PROXY_URL }}
       - run: touch out/.nojekyll
       - uses: actions/upload-pages-artifact@v3

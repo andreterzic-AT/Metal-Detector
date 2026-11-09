@@ -33,7 +33,33 @@ und dein Profil sowie deine Merkliste werden auf dem Gerät gespeichert.
   und verlinkt jeweils den Artikel; im Fußbereich stehen Quellen und Lizenz.
 - MusicBrainz wird nicht mehr verwendet (dessen Genre-Tags sind nur nicht-kommerziell freigegeben).
 
-## Veröffentlichen auf IONOS (App + KI-Server)
+## Veröffentlichen unter eigener Domain (aktueller Weg)
+
+Die App läuft kostenlos auf **GitHub Pages**, erscheint aber unter einer eigenen Subdomain
+(z. B. `test.at-teamtools.de`). Der KI-Server läuft im kostenlosen **Cloudflare-Workers-Free-Tarif**
+(Ordner `worker/`). Die Hauptdomain und eine bestehende WordPress-Seite bleiben unberührt.
+
+**App unter eigener Domain** (Schritt 1 und 2 zusammen erledigen, dann Schritt 3):
+1. GitHub: *Settings → Pages → Custom domain* `test.at-teamtools.de` eintragen und speichern.
+2. GitHub: *Settings → Secrets and variables → Actions → Variables* → `PAGES_CUSTOM_DOMAIN` = `test.at-teamtools.de`.
+3. IONOS: bei der Subdomain *Verwendungsart → DNS* einen **CNAME**-Eintrag anlegen:
+   Hostname `test`, zeigt auf `andreterzic-at.github.io`.
+4. GitHub: *Actions → „Deploy to GitHub Pages“ → Run workflow*. Sobald der DNS-Eintrag wirkt
+   (Minuten bis wenige Stunden), unter *Settings → Pages* **„Enforce HTTPS“** aktivieren.
+
+**KI-Server bei Cloudflare (Free-Tarif):**
+1. Kostenloses Konto auf dash.cloudflare.com (keine Domain hinzufügen, kein Bezahltarif nötig),
+   einmal *Workers & Pages* öffnen, **Account ID** kopieren, unter *My Profile → API Tokens* einen
+   Token mit der Vorlage **„Edit Cloudflare Workers“** erstellen.
+2. GitHub-Secrets: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `ANTHROPIC_API_KEY`.
+3. *Actions → „Deploy KI-Server (Cloudflare)“ → Run workflow*. Im Log steht die Adresse
+   (`https://metal-detector-ai.<name>.workers.dev`).
+4. GitHub-Variable `AI_PROXY_URL` = diese Adresse, dann „Deploy to GitHub Pages“ erneut starten.
+
+Erlaubte Seiten für den KI-Server stehen in `worker/wrangler.toml` (`ALLOWED_ORIGINS`), das
+Tageslimit ebenda (`DAILY_BUDGET`).
+
+## Alternative: Veröffentlichen auf IONOS-Webhosting (nur mit Webspace, nicht mit „Hosting für WordPress“)
 
 Die App und der KI-Server laufen auf dem eigenen IONOS-Webhosting:
 `https://<deine-adresse>/` ist die App, `https://<deine-adresse>/api/chat.php` der KI-Server (PHP).
@@ -71,7 +97,8 @@ In der App lässt sich unter *Profil-Einstellungen* wählen: **KI-Chat Aus / Hai
 - `app/page.tsx` – Oberfläche
 - `lib/ai-chat.ts` – KI-Chat: schickt das Gespräch an den Server und führt die Werkzeuge aus
 - `lib/ai-tools.ts` – Auftrag (System-Prompt) und Werkzeuge der KI – hier ändern, dann `npm run export-ai`
-- `server/api/chat.php` – KI-Server (PHP) mit Schlüssel, Limits und Tageslimit; `ai-config.json` erzeugt `npm run export-ai`
+- `worker/` – KI-Server (Cloudflare Worker, aktueller Weg)
+- `server/api/chat.php` – KI-Server als PHP-Alternative für klassisches Webhosting mit Schlüssel, Limits und Tageslimit; `ai-config.json` erzeugt `npm run export-ai`
 - `.github/workflows/deploy-ionos.yml` – Veröffentlichung auf IONOS (Test automatisch, Live per Knopfdruck)
 - `lib/chat.ts` – Chat-Engine: erkennt Fragen („Wie passt X zu mir?“, „Bands wie X“, „Ich hasse Growls“) und beantwortet sie
 - `lib/watchlist.ts` + `components/watchlist-dialog.tsx` – Merkliste (auf dem Gerät gespeichert)
