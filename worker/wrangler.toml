@@ -3,6 +3,9 @@ name = "metal-detector-ai"
 main = "src/index.ts"
 compatibility_date = "2026-09-01"
 compatibility_flags = ["nodejs_compat"]
+# Erreichbar unter <name>.<subdomain>.workers.dev, aber ohne zusätzliche Vorschau-Adressen pro Version
+workers_dev = true
+preview_urls = false
 
 [vars]
 # Nur diese Seiten dürfen den Server benutzen
