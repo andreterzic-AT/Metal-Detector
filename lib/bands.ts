@@ -14,7 +14,10 @@ export type BandInfo = {
   profile: Partial<UserProfile>
   /** Woher die Daten stammen – fehlt bei der eingebauten Liste */
   source?: {
-    kind: "web"
+    /** web = Wikipedia/Wikidata, ai = KI-Websuche */
+    kind: "web" | "ai"
+    /** Bei KI-Websuche: die verwendeten Quellen */
+    webSources?: { title: string; url: string }[]
     wikidata?: string
     /** Nur bei älteren, gespeicherten Ergebnissen */
     musicbrainz?: string

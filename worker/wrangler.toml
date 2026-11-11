@@ -14,6 +14,8 @@ ALLOWED_ORIGINS = "https://test.at-teamtools.de,https://app.at-teamtools.de,http
 # Eine Chat-Nachricht braucht je nach Werkzeugen 1–4 Anfragen.
 DAILY_BUDGET = "1000"
 OPUS_COST = "25"
+# Eine KI-Bandsuche (Websuche, ca. 1-3 Cent) zählt so viele Einheiten. Bereits recherchierte Bands kosten nichts.
+BAND_COST = "20"
 
 # Höchstens 20 Anfragen pro Minute und Nutzer (IP)
 [[ratelimits]]
@@ -25,6 +27,14 @@ simple = { limit = 20, period = 60 }
 name = "BUDGET"
 class_name = "BudgetCounter"
 
+[[durable_objects.bindings]]
+name = "BAND_CACHE"
+class_name = "BandCache"
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["BudgetCounter"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["BandCache"]

@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk"
 import { DurableObject } from "cloudflare:workers"
 import { AI_LIMITS, AI_MODELS, AI_TOOLS, SYSTEM_PROMPT, type AiModelKey } from "../../lib/ai-tools"
+import { researchBand, type BandResearch } from "./band-research"
 
 /*
  * Metal Detector – KI-Server (Cloudflare Worker)
@@ -25,9 +26,41 @@ export interface Env {
   /** Tageslimit in "Einheiten": eine Haiku-Anfrage = 1, eine Opus-Anfrage = OPUS_COST */
   DAILY_BUDGET: string
   OPUS_COST: string
+  /** Einheiten fürs Tageslimit pro KI-Bandsuche (Websuche kostet extra) */
+  BAND_COST: string
   RATE_LIMITER: RateLimit
   BUDGET: DurableObjectNamespace<BudgetCounter>
+  BAND_CACHE: DurableObjectNamespace<BandCache>
 }
+
+// ---------- Zwischenspeicher für KI-Bandsuchen (für alle Nutzer gemeinsam) ----------
+
+const BAND_CACHE_DAYS = 30
+const NOT_FOUND_CACHE_DAYS = 2
+
+export class BandCache extends DurableObject {
+  async read(key: string): Promise<BandResearch | null> {
+    const entry = await this.ctx.storage.get<{ at: number; data: BandResearch }>(`band:${key}`)
+    if (!entry) return null
+    const maxAge = (entry.data.found ? BAND_CACHE_DAYS : NOT_FOUND_CACHE_DAYS) * 86400000
+    if (Date.now() - entry.at > maxAge) {
+      await this.ctx.storage.delete(`band:${key}`)
+      return null
+    }
+    return entry.data
+  }
+
+  async write(key: string, data: BandResearch): Promise<void> {
+    await this.ctx.storage.put(`band:${key}`, { at: Date.now(), data })
+  }
+}
+
+const normalizeName = (s: string) =>
+  s
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]/g, "")
 
 // ---------- Tageslimit (ein einziger, zentraler Zähler) ----------
 
@@ -99,7 +132,8 @@ export default {
 
     if (request.method === "OPTIONS") return new Response(null, { status: cors["Access-Control-Allow-Origin"] ? 204 : 403, headers: cors })
     if (url.pathname === "/health") return json({ ok: true }, 200, cors)
-    if (request.method !== "POST" || !["/", "/chat", "/chat/"].includes(url.pathname)) return json({ error: "Nicht gefunden" }, 404, cors)
+    const isBand = url.pathname === "/band"
+    if (request.method !== "POST" || !(isBand || ["/", "/chat", "/chat/"].includes(url.pathname))) return json({ error: "Nicht gefunden" }, 404, cors)
     if (!cors["Access-Control-Allow-Origin"]) return json({ error: "Herkunft nicht erlaubt" }, 403, {})
     if (!env.ANTHROPIC_API_KEY) return json({ error: "Server nicht eingerichtet (API-Schlüssel fehlt)" }, 500, cors)
 
@@ -107,6 +141,8 @@ export default {
     const ip = request.headers.get("CF-Connecting-IP") ?? "unknown"
     const { success } = await env.RATE_LIMITER.limit({ key: ip })
     if (!success) return json({ error: "rate-limit", message: "Kurz durchatmen – zu viele Nachrichten in einer Minute." }, 429, cors)
+
+    if (isBand) return handleBand(request, env, cors)
 
     // 2. Anfrage lesen und prüfen
     const raw = await request.text()
@@ -147,20 +183,61 @@ export default {
       })
       return json({ content: response.content, stop_reason: response.stop_reason, model: response.model }, 200, cors)
     } catch (error) {
-      if (error instanceof Anthropic.BadRequestError) {
-        // Meist: Gesprächsverlauf passt nicht mehr – die App beginnt dann ein neues Gespräch
-        return json({ error: "bad-request", message: error.message }, 400, cors)
-      }
-      if (error instanceof Anthropic.AuthenticationError || error instanceof Anthropic.PermissionDeniedError) {
-        return json({ error: "server-key", message: "Der API-Schlüssel auf dem Server ist ungültig." }, 502, cors)
-      }
-      if (error instanceof Anthropic.RateLimitError) {
-        return json({ error: "busy", message: "Die KI ist gerade ausgelastet – versuch es gleich nochmal." }, 503, cors)
-      }
-      if (error instanceof Anthropic.APIError) {
-        return json({ error: "upstream", message: `KI-Fehler ${error.status ?? ""}` }, 502, cors)
-      }
-      return json({ error: "upstream", message: "KI nicht erreichbar" }, 502, cors)
+      return apiError(error, cors)
     }
   },
 } satisfies ExportedHandler<Env>
+
+function apiError(error: unknown, cors: Record<string, string>): Response {
+  if (error instanceof Anthropic.BadRequestError) {
+    // Meist: Gesprächsverlauf passt nicht mehr – die App beginnt dann ein neues Gespräch
+    return json({ error: "bad-request", message: error.message }, 400, cors)
+  }
+  if (error instanceof Anthropic.AuthenticationError || error instanceof Anthropic.PermissionDeniedError) {
+    return json({ error: "server-key", message: "Der API-Schlüssel auf dem Server ist ungültig." }, 502, cors)
+  }
+  if (error instanceof Anthropic.RateLimitError) {
+    return json({ error: "busy", message: "Die KI ist gerade ausgelastet – versuch es gleich nochmal." }, 503, cors)
+  }
+  if (error instanceof Anthropic.APIError) {
+    return json({ error: "upstream", message: `KI-Fehler ${error.status ?? ""}` }, 502, cors)
+  }
+  return json({ error: "upstream", message: "KI nicht erreichbar" }, 502, cors)
+}
+
+// ---------- KI-Bandsuche ----------
+
+async function handleBand(request: Request, env: Env, cors: Record<string, string>): Promise<Response> {
+  let name = ""
+  try {
+    const body = (await request.json()) as { name?: unknown }
+    name = typeof body.name === "string" ? body.name.trim() : ""
+  } catch {
+    return json({ error: "Ungültiges JSON" }, 400, cors)
+  }
+  if (!name || name.length > 80) return json({ error: "Ungültiger Bandname" }, 400, cors)
+  const key = normalizeName(name)
+  if (!key) return json({ error: "Ungültiger Bandname" }, 400, cors)
+
+  // Schon einmal recherchiert? Dann kostenlos aus dem Zwischenspeicher
+  const cache = env.BAND_CACHE.get(env.BAND_CACHE.idFromName("global"))
+  const cached = await cache.read(key)
+  if (cached) return json({ ...cached, cached: true }, 200, cors)
+
+  const budget = env.BUDGET.get(env.BUDGET.idFromName("global"))
+  const spent = await budget.spend(Number(env.BAND_COST || 20), Number(env.DAILY_BUDGET || 1000))
+  if (!spent.ok) return json({ error: "daily-limit", message: "Das KI-Tageslimit ist erreicht." }, 429, cors)
+
+  const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY, baseURL: env.ANTHROPIC_BASE_URL || undefined, maxRetries: 1 })
+  try {
+    const result = await researchBand(client, name)
+    // Nur speichern, wenn wirklich etwas Brauchbares herauskam (oder sicher nichts existiert)
+    if (!result.found || Object.keys(result.profile).length >= 5) await cache.write(key, result)
+    return json({ ...result, cached: false }, 200, cors)
+  } catch (error) {
+    if (error instanceof Error && (error.message === "refusal" || error.message === "no-result")) {
+      return json({ error: "no-result", message: "Die KI konnte zu dieser Band nichts Verlässliches finden." }, 502, cors)
+    }
+    return apiError(error, cors)
+  }
+}

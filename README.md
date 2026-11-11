@@ -102,7 +102,8 @@ In der App lässt sich unter *Profil-Einstellungen* wählen: **KI-Chat Aus / Hai
 - `.github/workflows/deploy-ionos.yml` – Veröffentlichung auf IONOS (Test automatisch, Live per Knopfdruck)
 - `lib/chat.ts` – Chat-Engine: erkennt Fragen („Wie passt X zu mir?“, „Bands wie X“, „Ich hasse Growls“) und beantwortet sie
 - `lib/watchlist.ts` + `components/watchlist-dialog.tsx` – Merkliste (auf dem Gerät gespeichert)
-- `lib/band-source.ts` – Band suchen: zuerst Web, sonst eingebaute Liste
+- `lib/band-source.ts` – Band suchen: Wikipedia/Wikidata → eingebaute Liste → KI-Websuche (`lib/ai-band.ts`, Server: `worker/src/band-research.ts`, Ergebnisse 30 Tage zwischengespeichert)
+- `lib/match.ts` – Übereinstimmung inkl. Ausschlusskriterien (Du 0–1 & Band ≥5 oder Du 2 & Band ≥7 → Rot; Du 0–1 & Band 2–4 → höchstens Gelb)
 - `lib/web-lookup.ts` – Bandsuche im Web (Wikipedia-Suche + Wikidata-Genres, beides kommerziell nutzbar), mit Zwischenspeicher auf dem Gerät
 - `lib/genre-rules.ts` – Regeln, die Genres und Textthemen in Profilwerte übersetzen (hier feinjustieren)
 - `lib/match.ts` – Berechnung der Übereinstimmung

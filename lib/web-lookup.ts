@@ -455,3 +455,15 @@ export async function searchByGenre(genre: string, limit = 8, exclude: string[] 
 
 /** Kurze Pause zwischen mehreren Abfragen, damit Wikidata uns nicht bremst */
 export const apiPause = () => sleep(300)
+
+// ---------- Für die KI-Bandsuche ----------
+
+/** Profil aus einer Genre-Liste schätzen (gleiche Regeln wie bei Wikidata-Genres) */
+export function profileFromGenres(genres: string[]): Partial<UserProfile> {
+  return profileFromTags(genres.map((name) => ({ name, count: 3 }))).values
+}
+
+/** Ein Ergebnis (z. B. von der KI-Bandsuche) auf dem Gerät zwischenspeichern */
+export function cacheBand(query: string, band: BandInfo) {
+  if (Object.keys(band.profile).length > 0) writeCache(normalize(query), band)
+}

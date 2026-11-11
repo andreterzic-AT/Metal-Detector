@@ -1,7 +1,7 @@
 import type { BandInfo } from "./bands"
 import { findBand } from "./band-source"
 import { genreRules } from "./genre-rules"
-import { calculateMatch } from "./match"
+import { calculateMatch, findDealbreakers } from "./match"
 import { getPropertyLabel, type ProfileKey, type UserProfile } from "./profile"
 import { apiPause, searchByGenre, type GenreBand } from "./web-lookup"
 import { findOnWatchlist, type WatchItem } from "./watchlist"
@@ -181,6 +181,8 @@ export function rankGenres(profile: UserProfile) {
   const strong = (Object.keys(profile) as ProfileKey[]).filter((k) => Math.abs(profile[k] - 5) >= 2)
   return genreRules
     .filter((r) => Object.keys(r.values).length >= 5 && r.match !== "rock")
+    // Genres mit einem Ausschlusskriterium (z. B. satanische Symbolik bei Black Metal) nie empfehlen
+    .filter((r) => !findDealbreakers(r.values, profile).some((d) => d.level === "red"))
     .map((r) => {
       const keys = [...new Set([...(Object.keys(r.values) as ProfileKey[]), ...strong])]
       let score = 0
@@ -384,7 +386,14 @@ function explainLast(ctx: Ctx): ChatOutcome {
   const bad = rows.sort((a, b) => b.diff - a.diff).filter((r) => r.diff >= 4).slice(0, 4)
   const m = calculateMatch(name, info, ctx.profile)
 
+  const dealbreakers = findDealbreakers(info.profile, ctx.profile)
   let text = `So komme ich bei **${name}** auf **${m.matchPercentage}%**:\n\n`
+  if (dealbreakers.some((d) => d.level === "red")) {
+    text += `⛔ **Ausschlusskriterium:** ${dealbreakers
+      .filter((d) => d.level === "red")
+      .map((d) => `${getPropertyLabel(d.key)} (Band ${d.band}, Du ${d.you})`)
+      .join(", ")} – deshalb Rot, egal wie gut der Rest passt.\n\n`
+  }
   text += `Ich vergleiche ${keys.length} Eigenschaften. Pro Eigenschaft gibt es 10 Punkte minus den Abstand zwischen Band und dir.\n\n`
   if (good.length) text += `👍 **Passt:**\n${good.map((r) => `• ${getPropertyLabel(r.k)} (Band ${r.band}, Du ${r.you})`).join("\n")}\n\n`
   if (bad.length) text += `👎 **Passt nicht:**\n${bad.map((r) => `• ${getPropertyLabel(r.k)} (Band ${r.band}, Du ${r.you})`).join("\n")}\n\n`

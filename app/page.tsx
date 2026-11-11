@@ -179,6 +179,7 @@ export default function MetalDetectorPage() {
     let links = `[🎧 Auf Spotify anhören](${analysis.spotifyLink})`
     if (info.source?.wikipedia) links += `\n[📖 Wikipedia](${info.source.wikipedia})`
     if (info.source?.wikidata) links += `\n[🗂️ Wikidata](${info.source.wikidata})`
+    for (const src of info.source?.webSources?.slice(0, 3) ?? []) links += `\n[🌐 ${src.title.replace(/[[\]()]/g, "")}](${src.url})`
     addMessage("assistant", `${analysis.explanation}\n\n${analysis.scoreBreakdown}\n\n${links}`, [
       { label: "❤️ Merken", type: "watch", value: name },
       { label: "🔎 Ähnliche Bands", type: "say", value: `Bands wie ${name}` },

@@ -2,7 +2,7 @@ import type { BandInfo } from "./bands"
 import { findBand } from "./band-source"
 import { bandGenres, genreRecommendations, rankGenres, type ChatAction, type LastBand } from "./chat"
 import { AI_LIMITS, AI_MODELS, type AiModelKey } from "./ai-tools"
-import { calculateMatch } from "./match"
+import { calculateMatch, findDealbreakers } from "./match"
 import { getPropertyLabel, type ProfileKey, type UserProfile } from "./profile"
 import { apiPause, searchByGenre, type GenreBand } from "./web-lookup"
 import {
@@ -88,11 +88,19 @@ function bandSummary(name: string, info: BandInfo, profile: UserProfile) {
     themes: info.themes,
     match_percent: m.rating ? m.matchPercentage : null,
     rating: ratingLabel(m.rating),
+    dealbreakers: findDealbreakers(info.profile, profile).map(
+      (d) => `${getPropertyLabel(d.key)}: Band ${d.band}, Nutzer ${d.you} → ${d.level === "red" ? "automatisch rot" : "höchstens gelb"}`
+    ),
     good_matches: rows.filter((r) => r.diff <= 2 && Math.max(r.band, r.you) >= 7).slice(0, 6).map(fmt),
     mismatches: rows.filter((r) => r.diff >= 4).sort((a, b) => b.diff - a.diff).slice(0, 6).map(fmt),
     live: Object.fromEntries(liveKeys.filter((k) => info.profile[k] !== undefined).map((k) => [getPropertyLabel(k), info.profile[k]])),
     spotify: info.spotify,
-    data_source: info.source ? "Web (geschätzt aus Genres und Wikipedia)" : "eingebaute Liste",
+    data_source:
+      info.source?.kind === "ai"
+        ? "KI-Websuche (geschätzt)"
+        : info.source
+          ? "Web (geschätzt aus Genres und Wikipedia)"
+          : "eingebaute Liste",
   }
 }
 

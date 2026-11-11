@@ -3,6 +3,26 @@ import { getPropertyLabel, type ProfileKey, type UserProfile } from "./profile"
 
 export type Rating = "green" | "yellow" | "red" | null
 
+/**
+ * Ausschlusskriterien: Was du ablehnst, darf bei der Band nicht stark vorkommen.
+ *  - Du 0–1, Band ≥ 5  → automatisch Rot
+ *  - Du 2,   Band ≥ 7  → automatisch Rot
+ *  - Du 0–1, Band 2–4  → höchstens Gelb
+ */
+export type Dealbreaker = { key: ProfileKey; band: number; you: number; level: "red" | "yellow" }
+
+export function findDealbreakers(bandProfile: BandInfo["profile"], userProfile: UserProfile): Dealbreaker[] {
+  const result: Dealbreaker[] = []
+  for (const key of Object.keys(bandProfile) as ProfileKey[]) {
+    const band = bandProfile[key]
+    const you = userProfile[key]
+    if (band === undefined || you === undefined) continue
+    if ((you <= 1 && band >= 5) || (you <= 2 && band >= 7)) result.push({ key, band, you, level: "red" })
+    else if (you <= 1 && band >= 2) result.push({ key, band, you, level: "yellow" })
+  }
+  return result.sort((a, b) => (a.level === b.level ? b.band - a.band : a.level === "red" ? -1 : 1))
+}
+
 export type MatchResult = {
   rating: Rating
   explanation: string
@@ -52,8 +72,24 @@ export function calculateMatch(bandName: string, bandInfo: BandInfo, userProfile
 
   let finalRating: Rating
   let ratingText: string
+  const dealbreakers = findDealbreakers(bandInfo.profile, userProfile)
+  const hardNo = dealbreakers.filter((d) => d.level === "red")
+  const warnings = dealbreakers.filter((d) => d.level === "yellow")
 
-  if (matchPercentage >= 80) {
+  if (hardNo.length > 0) {
+    // Ein Ausschlusskriterium schlägt jeden Prozentwert
+    finalRating = "red"
+    ratingText = `🔴 **NICHT EMPFOHLEN – Ausschlusskriterium** (${matchPercentage}%)\n\n${hardNo
+      .slice(0, 3)
+      .map((d) => `⛔ ${getPropertyLabel(d.key)}: Band ${d.band}/10, Du ${d.you}/10`)
+      .join("\n")}\n\nDas lehnst du ab – egal wie gut der Rest passt.`
+  } else if (matchPercentage >= 70 && warnings.length > 0) {
+    finalRating = "yellow"
+    ratingText = `🟡 **PASST, ABER MIT VORBEHALT** (${matchPercentage}%)\n\n${warnings
+      .slice(0, 3)
+      .map((d) => `⚠️ ${getPropertyLabel(d.key)}: Band ${d.band}/10, Du ${d.you}/10`)
+      .join("\n")}\n\nDavon steckt etwas drin, das du nicht magst.`
+  } else if (matchPercentage >= 80) {
     finalRating = "green"
     ratingText = `🟢 **PREMIUM-TREFFER!** (${matchPercentage}%)\n\nDiese Band passt hervorragend zu deinem Profil!`
   } else if (matchPercentage >= 70) {
@@ -84,7 +120,11 @@ export function calculateMatch(bandName: string, bandInfo: BandInfo, userProfile
   }
 
   let scoreBreakdown = `**Match-Analyse:**\n${matchPercentage}% Übereinstimmung\n\nBasierend auf ${profileKeys.length} Profil-Eigenschaften`
-  if (bandInfo.source) {
+  if (hardNo.length) scoreBreakdown += `\n⛔ ${hardNo.length} Ausschlusskriterium${hardNo.length > 1 ? "en" : ""} → Rot`
+  else if (warnings.length) scoreBreakdown += `\n⚠️ ${warnings.length} Vorbehalt${warnings.length > 1 ? "e" : ""} → höchstens Gelb`
+  if (bandInfo.source?.kind === "ai") {
+    scoreBreakdown += `\nQuelle: KI-Websuche (${bandInfo.source.webSources?.length ?? 0} Quellen) – automatisch geschätzt`
+  } else if (bandInfo.source) {
     scoreBreakdown += `\nQuelle: Web (${bandInfo.source.tagCount} Genre-Tags, ${bandInfo.source.lyricSentences} Wikipedia-Sätze zu Texten/Themen) – automatisch geschätzt`
   } else {
     scoreBreakdown += `\nQuelle: eingebaute Liste`
