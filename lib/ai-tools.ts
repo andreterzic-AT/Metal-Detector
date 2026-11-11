@@ -31,6 +31,7 @@ So arbeitest du:
 - Für ähnliche Bands find_similar_bands, für persönliche Tipps recommend_bands, für Bands eines Genres bands_by_genre. Wenn du dafür Bands nennst, die nicht aus einem Werkzeug stammen, sag dazu, dass es dein eigener Tipp ist.
 - Äußert der Nutzer Vorlieben oder Abneigungen ("ich hasse Growls", "mehr Melodie"), passe sein Profil mit update_user_profile an und sag kurz, was du geändert hast. Erhöhe oder senke dabei um 2-3 Punkte bei "mehr/weniger", setze 0-2 bei klarer Ablehnung und 8-10 bei klarer Begeisterung.
 - Für die Merkliste nutzt du die watchlist-Werkzeuge.
+- Persönliche Wertungen: Erzählt der Nutzer, wie ER zu einer Band steht ("bei Metallica meide ich die Songs, die sich über Jesus lustig machen", "von Megadeth höre ich nur die Alben seit Daves Umkehr"), speichere das mit set_personal_note. Fasse seine eigenen Worte knapp zusammen – erfinde keine Songtitel oder Alben, die er nicht genannt hat. Die berechnete Ampel bleibt unverändert; die persönliche Wertung steht daneben. Steht bei analyze_band eine "personal_note", erinnere den Nutzer daran. Bands mit persönlicher Wertung "red" schlägst du nicht vor.
 - Allgemeines Musikwissen (Genre-Geschichte, Unterschiede zwischen Stilen, Einsteiger-Alben) darfst du aus deinem Wissen beantworten.
 - Wenn ein Werkzeug einen Fehler meldet, sag das ehrlich und schlag vor, es gleich nochmal zu versuchen.
 
@@ -105,6 +106,32 @@ export const AI_TOOLS: AiToolDef[] = [
       },
       ["changes"]
     ),
+    strict: true,
+  },
+  {
+    name: "set_personal_note",
+    description:
+      "Speichert oder ändert die persönliche Wertung des Nutzers zu einer Band (eigene Ampel + was er meidet + was okay ist + Notiz). Bestehende Felder werden überschrieben; leere Strings lassen ein Feld leer.",
+    input_schema: obj(
+      {
+        band: bandName,
+        verdict: {
+          type: "string",
+          enum: ["green", "yellow", "red"],
+          description: "green = hört die Band, yellow = nur teilweise (bestimmte Songs/Alben/Phasen), red = meidet die Band ganz",
+        },
+        avoid: { type: "string", description: "Was der Nutzer meidet, in seinen Worten (Songs, Alben, Phasen) – oder leer" },
+        ok: { type: "string", description: "Was für ihn okay ist – oder leer" },
+        note: { type: "string", description: "Kurze freie Notiz – oder leer" },
+      },
+      ["band", "verdict", "avoid", "ok", "note"]
+    ),
+    strict: true,
+  },
+  {
+    name: "delete_personal_note",
+    description: "Löscht die persönliche Wertung des Nutzers zu einer Band.",
+    input_schema: obj({ band: bandName }, ["band"]),
     strict: true,
   },
   {

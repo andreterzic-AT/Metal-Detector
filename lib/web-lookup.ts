@@ -458,7 +458,9 @@ export async function searchByGenre(genre: string, limit = 8, exclude: string[] 
   const query = `SELECT DISTINCT ?band ?bandLabel ?desc ?links WHERE {
   VALUES ?lbl { ${variants.map((v) => `"${v}"@en`).join(" ")} }
   ?genre rdfs:label ?lbl .
-  ?band wdt:P136 ?genre ; wdt:P31 wd:Q215380 ; wikibase:sitelinks ?links .
+  # Musikgruppe, Rockband, Heavy-Metal-Band, Musikensemble – Bands sind bei Wikidata unterschiedlich eingetragen
+  VALUES ?bandType { wd:Q215380 wd:Q5741069 wd:Q56816954 wd:Q2088357 }
+  ?band wdt:P136 ?genre ; wdt:P31 ?bandType ; wikibase:sitelinks ?links .
   OPTIONAL { ?band schema:description ?desc FILTER(LANG(?desc) = "de") }
   SERVICE wikibase:label { bd:serviceParam wikibase:language "en,de". }
 } ORDER BY DESC(?links) LIMIT ${limit + exclude.length + 5}`

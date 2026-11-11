@@ -3,6 +3,7 @@ import { findBand } from "./band-source"
 import { bandGenres, genreRecommendations, rankGenres, type ChatAction, type LastBand } from "./chat"
 import { AI_LIMITS, AI_MODELS, type AiModelKey } from "./ai-tools"
 import { calculateMatch, findDealbreakers } from "./match"
+import { getNote, noteSummary, notesBridge, redNoteBands, removeNote, setNote, type NoteVerdict } from "./personal-notes"
 import { getPropertyLabel, type ProfileKey, type UserProfile } from "./profile"
 import { apiPause, searchByGenre, type GenreBand } from "./web-lookup"
 import {
@@ -95,6 +96,10 @@ function bandSummary(name: string, info: BandInfo, profile: UserProfile) {
     mismatches: rows.filter((r) => r.diff >= 4).sort((a, b) => b.diff - a.diff).slice(0, 6).map(fmt),
     live: Object.fromEntries(liveKeys.filter((k) => info.profile[k] !== undefined).map((k) => [getPropertyLabel(k), info.profile[k]])),
     spotify: info.spotify,
+    personal_note: (() => {
+      const n = getNote(notesBridge.get(), name)
+      return n ? { verdict: n.verdict, summary: noteSummary(n) } : null
+    })(),
     data_source:
       info.source?.kind === "ai"
         ? "KI-Websuche (geschätzt)"
@@ -136,7 +141,7 @@ async function runTool(name: string, input: Record<string, unknown>, deps: AiDep
       const bands: GenreBand[] = []
       for (const [i, g] of genres.entries()) {
         if (i > 0) await apiPause()
-        bands.push(...(await searchByGenre(g, 5, [band.name, ...bands.map((b) => b.name)])))
+        bands.push(...(await searchByGenre(g, 5, [band.name, ...bands.map((b) => b.name), ...redNoteBands(notesBridge.get())])))
       }
       return { result: { based_on: band.name, genres, similar_bands: bands }, actions: bands.slice(0, 6).map((b) => bandChip(b.name)) }
     }
@@ -149,7 +154,7 @@ async function runTool(name: string, input: Record<string, unknown>, deps: AiDep
       }
     }
     case "bands_by_genre": {
-      const bands = await searchByGenre(String(input.genre ?? "").toLowerCase(), 8)
+      const bands = await searchByGenre(String(input.genre ?? "").toLowerCase(), 8, redNoteBands(notesBridge.get()))
       return { result: { genre: input.genre, bands }, actions: bands.slice(0, 6).map((b) => bandChip(b.name)) }
     }
     case "get_user_profile": {
@@ -159,6 +164,7 @@ async function runTool(name: string, input: Record<string, unknown>, deps: AiDep
           profile_is_still_neutral: Object.values(profile).every((v) => v === 5),
           values,
           best_genres: rankGenres(profile).slice(0, 5),
+          personal_notes: Object.values(notesBridge.get()).map((n) => ({ band: n.band, summary: noteSummary(n) })),
         },
       }
     }
@@ -177,6 +183,31 @@ async function runTool(name: string, input: Record<string, unknown>, deps: AiDep
       if (done.length === 0) return { result: "Keine gültigen Änderungen", isError: true }
       deps.applyProfile(next)
       return { result: { changed: done }, actions: [{ label: "↩️ Profiländerung rückgängig", type: "undo", value: "" }] }
+    }
+    case "set_personal_note": {
+      const bandName = String(input.band ?? "").trim()
+      const verdict = String(input.verdict) as NoteVerdict
+      if (!bandName || !["green", "yellow", "red"].includes(verdict)) return { result: "Ungültige Wertung", isError: true }
+      const all = notesBridge.get()
+      notesBridge.set(
+        setNote(all, {
+          band: getNote(all, bandName)?.band ?? bandName,
+          verdict,
+          avoid: String(input.avoid ?? ""),
+          ok: String(input.ok ?? ""),
+          note: String(input.note ?? ""),
+        })
+      )
+      return {
+        result: { saved: noteSummary(getNote(notesBridge.get(), bandName)!) },
+        actions: [{ label: `📝 Wertung ${bandName}`, type: "note", value: bandName }],
+      }
+    }
+    case "delete_personal_note": {
+      const bandName = String(input.band ?? "")
+      if (!getNote(notesBridge.get(), bandName)) return { result: `Keine Wertung zu ${bandName} vorhanden`, isError: true }
+      notesBridge.set(removeNote(notesBridge.get(), bandName))
+      return { result: `Wertung zu ${bandName} gelöscht` }
     }
     case "watchlist_get": {
       const list = deps.getWatchlist()

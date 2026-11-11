@@ -5,6 +5,16 @@ import { calculateMatch, findDealbreakers } from "./match"
 import { getPropertyLabel, type ProfileKey, type UserProfile } from "./profile"
 import { apiPause, searchByGenre, type GenreBand } from "./web-lookup"
 import { findOnWatchlist, type WatchItem } from "./watchlist"
+import {
+  VERDICT_LABELS,
+  getNote,
+  noteSummary,
+  notesBridge,
+  redNoteBands,
+  removeNote,
+  setNote,
+  type NoteVerdict,
+} from "./personal-notes"
 
 /*
  * Chat-Engine ohne KI: erkennt typische deutsche Sätze ("Wie passt X zu mir?",
@@ -12,7 +22,7 @@ import { findOnWatchlist, type WatchItem } from "./watchlist"
  * und dem Nutzerprofil.
  */
 
-export type ChatAction = { label: string; type: "band" | "say" | "undo" | "link" | "watch"; value: string }
+export type ChatAction = { label: string; type: "band" | "say" | "undo" | "link" | "watch" | "note"; value: string }
 export type BotReply = { text: string; actions?: ChatAction[] }
 export type LastBand = { name: string; info: BandInfo } | null
 
@@ -212,7 +222,8 @@ const HELP: BotReply = {
     "⚙️ **Profil per Chat ändern** – „Ich hasse Growls“, „Mehr Melodie bitte“\n" +
     "🎤 **Folgefragen** – „Wie sind die live?“, „Warum?“\n" +
     "👤 **Über dich** – „Was mag ich?“, „Welche Genres passen zu mir?“\n" +
-    "❤️ **Merkliste** – „Merk dir Sabaton“, „Zeig meine Merkliste“",
+    "❤️ **Merkliste** – „Merk dir Sabaton“, „Zeig meine Merkliste“\n" +
+    "📝 **Deine Wertung** – „Bei Metallica meide ich die Songs, die sich über Jesus lustig machen“, „Zeig meine Wertungen“",
   actions: [sayAction("Empfiehl mir was"), sayAction("Was mag ich?"), sayAction("Bands wie Metallica")],
 }
 
@@ -259,7 +270,14 @@ export function bandGenres(info: BandInfo): string[] {
 }
 
 function formatBandList(bands: GenreBand[]) {
-  return bands.map((b) => `• **${b.name}**${b.country ? ` (${b.country})` : ""}${b.tags.length ? ` – ${b.tags.join(", ")}` : ""}`).join("\n")
+  const notes = notesBridge.get()
+  return bands
+    .map((b) => {
+      const note = getNote(notes, b.name)
+      const hint = note && note.verdict !== "red" ? ` · 📝 ${VERDICT_LABELS[note.verdict]}` : ""
+      return `• **${b.name}**${b.country ? ` (${b.country})` : ""}${b.tags.length ? ` – ${b.tags.join(", ")}` : ""}${hint}`
+    })
+    .join("\n")
 }
 
 async function similarBands(query: string, ctx: Ctx): Promise<ChatOutcome> {
@@ -273,7 +291,7 @@ async function similarBands(query: string, ctx: Ctx): Promise<ChatOutcome> {
   try {
     for (const [i, g] of genres.entries()) {
       if (i > 0) await apiPause()
-      const list = await searchByGenre(g, 5, [band.name, ...results.map((r) => r.name)])
+      const list = await searchByGenre(g, 5, [band.name, ...results.map((r) => r.name), ...redNoteBands(notesBridge.get())])
       results.push(...list)
     }
   } catch {
@@ -299,7 +317,8 @@ async function similarBands(query: string, ctx: Ctx): Promise<ChatOutcome> {
  */
 export async function genreRecommendations(profile: UserProfile, wanted = 3, perGenre = 3) {
   const results: { genre: string; percent: number; bands: GenreBand[] }[] = []
-  const taken: string[] = []
+  // Bands, die du persönlich meidest (Wertung Rot), nie vorschlagen
+  const taken: string[] = [...redNoteBands(notesBridge.get())]
   for (const g of rankGenres(profile).slice(0, wanted + 3)) {
     if (results.length >= wanted) break
     if (results.length > 0 || taken.length > 0) await apiPause()
@@ -436,7 +455,7 @@ function genresForMe(profile: UserProfile): ChatOutcome {
 
 async function genreBands(genre: string): Promise<ChatOutcome> {
   try {
-    const bands = await searchByGenre(genre, 8)
+    const bands = await searchByGenre(genre, 8, redNoteBands(notesBridge.get()))
     if (bands.length === 0) return { replies: [{ text: `Zu **${genre}** habe ich keine Bands gefunden.` }] }
     return {
       replies: [{ text: `🎸 **${genre}** – bekannte Bands:\n\n${formatBandList(bands)}`, actions: bands.map((b) => bandAction(b.name)) }],
@@ -497,6 +516,97 @@ function removeWatch(query: string, ctx: Ctx): ChatOutcome {
   return { replies: [{ text: `🗑️ **${item.name}** ist von der Merkliste runter.` }], watchRemove: item.name }
 }
 
+// ---------- Persönliche Wertungen (ohne KI) ----------
+
+function verdictFrom(n: string): NoteVerdict {
+  if (/(komplett|ganz|gar nicht|ueberhaupt nicht|alles von|die ganze band|niemals)/.test(n)) return "red"
+  if (/(meide|nicht|ohne|nur|ausser|aber)/.test(n)) return "yellow"
+  return "green"
+}
+
+function noteSaved(band: string, verdict: NoteVerdict, avoid: string, ok: string, note: string): ChatOutcome {
+  const all = notesBridge.get()
+  const prev = getNote(all, band)
+  notesBridge.set(
+    setNote(all, {
+      band: prev?.band ?? band,
+      verdict,
+      avoid: avoid || prev?.avoid || "",
+      ok: ok || prev?.ok || "",
+      note: note || prev?.note || "",
+    })
+  )
+  const saved = getNote(notesBridge.get(), band)!
+  return {
+    replies: [
+      {
+        text: `📝 Gespeichert – deine Wertung für **${saved.band}**: ${noteSummary(saved)}\n\nDie berechnete Ampel bleibt, deine Wertung steht daneben.${verdict === "red" ? " Die Band schlage ich dir nicht mehr vor." : ""}`,
+        actions: [{ label: "📝 Bearbeiten", type: "note", value: saved.band }],
+      },
+    ],
+  }
+}
+
+function handleNoteIntent(text: string, n: string, ctx: Ctx): ChatOutcome | null {
+  let m: RegExpMatchArray | null
+  const bandOf = (raw: string) => {
+    const name = cleanBand(raw)
+    return !name || PRONOUNS.test(name) ? ctx.lastBand?.name ?? "" : name
+  }
+
+  // Alle Wertungen zeigen
+  if (/(zeig|liste|was sind).*(meine )?(wertungen|notizen)|^meine (wertungen|notizen)/.test(n)) {
+    const list = Object.values(notesBridge.get()).sort((a, b) => a.band.localeCompare(b.band))
+    if (list.length === 0) return { replies: [{ text: "Du hast noch keine persönlichen Wertungen. Sag mir zum Beispiel: „Bei Metallica meide ich die Songs, die sich über Jesus lustig machen.“" }] }
+    const icon = { green: "🟢", yellow: "🟡", red: "🔴" } as const
+    return {
+      replies: [
+        {
+          text: `📝 **Deine Wertungen** (${list.length})\n\n${list.map((x) => `${icon[x.verdict]} **${x.band}** – ${noteSummary(x)}`).join("\n")}`,
+          actions: list.slice(0, 6).map((x) => ({ label: `📝 ${x.band}`, type: "note" as const, value: x.band })),
+        },
+      ],
+    }
+  }
+
+  // Löschen: "Lösch meine Notiz zu Metallica"
+  if ((m = text.match(/(?:l(?:ö|oe|o)sch\w*|entfern\w*)\s+(?:meine\s+)?(?:notiz|wertung)\s+(?:zu|für|fuer|von|über|ueber)\s+(.+?)\s*[.!]?$/i))) {
+    const band = bandOf(m[1])
+    if (!band || !getNote(notesBridge.get(), band)) return { replies: [{ text: "Zu dieser Band habe ich keine Wertung von dir." }] }
+    notesBridge.set(removeNote(notesBridge.get(), band))
+    return { replies: [{ text: `🗑️ Deine Wertung zu **${band}** ist gelöscht.` }] }
+  }
+
+  // "Notiz zu Metallica: …" / "Meine Wertung für Megadeth: …"
+  if ((m = text.match(/^(?:meine\s+)?(?:notiz|wertung|persönliche wertung|persoenliche wertung)\s+(?:zu|für|fuer|über|ueber)\s+(.+?)\s*[:–-]\s*(.+)$/i))) {
+    const band = bandOf(m[1])
+    if (!band) return null
+    const body = m[2].trim()
+    return noteSaved(band, verdictFrom(norm(body)), "", "", body)
+  }
+
+  // "Bei Metallica meide ich die Songs, die …" / "Von Megadeth meide ich die alten Alben"
+  if ((m = text.match(/^(?:bei|von)\s+(.+?)\s+(?:meide|vermeide|skippe|überspringe|ueberspringe)\s+ich\s+(.+?)\s*[.!]?$/i))) {
+    const band = bandOf(m[1])
+    if (!band) return null
+    const rest = m[2].trim()
+    // "…, aber/den Rest/alles andere höre ich" → Okay-Teil abtrennen
+    const split = rest.split(/,?\s+(?:aber|den rest|alles andere|der rest|die anderen)\b/i)
+    const avoid = split[0].replace(/[,;]\s*$/, "").trim()
+    const ok = split.length > 1 ? rest.slice(split[0].length).replace(/^,?\s*(aber\s+)?/i, "").trim() : ""
+    const verdict: NoteVerdict = /^(alles|die ganze band|die band|sie komplett|komplett)/i.test(avoid) ? "red" : "yellow"
+    return noteSaved(band, verdict, avoid, ok, "")
+  }
+
+  // "Metallica meide ich komplett" / "Die meide ich ganz"
+  if ((m = text.match(/^(.+?)\s+(?:meide|vermeide)\s+ich\s+(?:komplett|ganz|grundsätzlich|grundsaetzlich|generell)\s*[.!]?$/i))) {
+    const band = bandOf(m[1])
+    if (!band) return null
+    return noteSaved(band, "red", "die ganze Band", "", "")
+  }
+  return null
+}
+
 // ---------- Hauptfunktion ----------
 
 export async function respond(input: string, ctx: Ctx): Promise<ChatOutcome> {
@@ -522,6 +632,10 @@ export async function respond(input: string, ctx: Ctx): Promise<ChatOutcome> {
   if ((m = n.match(/zeig (mir )?(ein paar |paar |einige )?(.+?) bands?$/)) && genreRules.some((r) => r.match === m![3].trim())) {
     return genreBands(m[3].trim())
   }
+
+  // Persönliche Wertungen
+  const noteOutcome = handleNoteIntent(text, n, ctx)
+  if (noteOutcome) return noteOutcome
 
   // Merkliste
   if ((m = text.match(/^(?:bitte\s+)?(?:nimm|l(?:ö|oe|o)sch\w*|entfern\w*|streich\w*)\s+(.*?)\s*(?:(?:von|aus) (?:der|meiner) merkliste(?:\s+(?:runter|raus|weg))?|runter|raus|weg)?\s*[.!]?$/i))) {

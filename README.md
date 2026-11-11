@@ -101,6 +101,7 @@ In der App lässt sich unter *Profil-Einstellungen* wählen: **KI-Chat Aus / Hai
 - `server/api/chat.php` – KI-Server als PHP-Alternative für klassisches Webhosting mit Schlüssel, Limits und Tageslimit; `ai-config.json` erzeugt `npm run export-ai`
 - `.github/workflows/deploy-ionos.yml` – Veröffentlichung auf IONOS (Test automatisch, Live per Knopfdruck)
 - `lib/chat.ts` – Chat-Engine: erkennt Fragen („Wie passt X zu mir?“, „Bands wie X“, „Ich hasse Growls“) und beantwortet sie
+- `lib/personal-notes.ts` + `components/note-dialog.tsx` – persönliche Wertungen pro Band (eigene Ampel, Meide/Okay/Notiz; Rot = nie vorschlagen)
 - `lib/watchlist.ts` + `components/watchlist-dialog.tsx` – Merkliste (auf dem Gerät gespeichert)
 - `lib/band-source.ts` – Band suchen: Wikipedia/Wikidata → eingebaute Liste → KI-Websuche (`lib/ai-band.ts`, Server: `worker/src/band-research.ts`, Ergebnisse 30 Tage zwischengespeichert)
 - `lib/match.ts` – Übereinstimmung inkl. Ausschlusskriterien (Du 0–1 & Band ≥5 oder Du 2 & Band ≥7 → Rot; Du 0–1 & Band 2–4 → höchstens Gelb)

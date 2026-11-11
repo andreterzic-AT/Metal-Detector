@@ -24,6 +24,20 @@ import {
   type WatchItem,
 } from "@/lib/watchlist"
 import { WatchlistDialog } from "@/components/watchlist-dialog"
+import { NoteDialog } from "@/components/note-dialog"
+import {
+  VERDICT_COLORS,
+  VERDICT_LABELS,
+  getNote,
+  loadNotes,
+  noteSummary,
+  notesBridge,
+  removeNote,
+  saveNotes,
+  setNote,
+  type NoteBook,
+  type PersonalNote,
+} from "@/lib/personal-notes"
 import { AiChat, AiError, aiAvailable, loadAiSetting, modelLabel, saveAiSetting, type AiSetting } from "@/lib/ai-chat"
 import { AI_MODELS } from "@/lib/ai-tools"
 import {
@@ -78,11 +92,11 @@ function SliderControl({ label, value, onChange }: { label: string; value: numbe
   )
 }
 
-function TrafficLight({ active, color }: { active: boolean; color: string }) {
+function TrafficLight({ active, color, small = false }: { active: boolean; color: string; small?: boolean }) {
   return (
     <motion.div
-      animate={{ opacity: active ? 1 : 0.2, scale: active ? 1.15 : 1 }}
-      className="w-16 h-16 lg:w-20 lg:h-20 rounded-full shadow-lg relative"
+      animate={{ opacity: active ? 1 : 0.2, scale: active ? 1.12 : 1 }}
+      className={`${small ? "w-11 h-11 lg:w-12 lg:h-12" : "w-16 h-16 lg:w-20 lg:h-20"} rounded-full shadow-lg relative`}
       style={{
         backgroundColor: active ? color : "#1a1a1a",
         boxShadow: active ? `0 0 30px ${color}, inset 0 0 15px ${color}80` : "inset 0 2px 8px rgba(0,0,0,0.8)",
@@ -96,6 +110,70 @@ function TrafficLight({ active, color }: { active: boolean; color: string }) {
         />
       )}
     </motion.div>
+  )
+}
+
+const VERDICT_RANK = { green: 0, yellow: 1, red: 2 } as const
+
+/** Rechte Seite der Bewertung: deine persönliche Wertung (oder Knopf zum Anlegen) */
+function PersonalPanel({ note, onEdit }: { note?: PersonalNote; onEdit: () => void }) {
+  if (!note) {
+    return (
+      <div className="flex flex-col justify-center gap-3 py-1">
+        <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">Deine Wertung</span>
+        <p className="text-sm text-zinc-400 leading-snug">
+          Meidest du einzelne Songs, Alben oder Phasen? Halte es hier fest – die Ampel links bleibt, wie sie ist.
+        </p>
+        <button
+          type="button"
+          onClick={onEdit}
+          className="self-start inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border border-zinc-600/60 bg-black/40 text-zinc-200 hover:bg-zinc-700/60 active:scale-95 transition"
+        >
+          📝 Eigene Wertung hinzufügen
+        </button>
+      </div>
+    )
+  }
+  const color = VERDICT_COLORS[note.verdict]
+  return (
+    <div className="flex flex-col gap-2 py-1 min-w-0">
+      <div className="flex items-center gap-2">
+        <span className="w-5 h-5 rounded-full shrink-0" style={{ backgroundColor: color, boxShadow: `0 0 12px ${color}` }} />
+        <div className="min-w-0">
+          <div className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">Deine Wertung</div>
+          <div className="text-sm font-extrabold text-zinc-100">{VERDICT_LABELS[note.verdict]}</div>
+        </div>
+      </div>
+      {note.avoid && (
+        <p className="text-[13px] leading-snug text-zinc-300 break-words">
+          🚫 <b className="text-zinc-100">Meide:</b> {note.avoid}
+        </p>
+      )}
+      {note.ok && (
+        <p className="text-[13px] leading-snug text-zinc-300 break-words">
+          ✅ <b className="text-zinc-100">Okay:</b> {note.ok}
+        </p>
+      )}
+      {note.note && <p className="text-[13px] leading-snug text-zinc-300 break-words">💬 {note.note}</p>}
+      <button
+        type="button"
+        onClick={onEdit}
+        className="self-start inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border border-zinc-600/60 bg-black/40 text-zinc-200 hover:bg-zinc-700/60 active:scale-95 transition"
+      >
+        📝 Bearbeiten
+      </button>
+    </div>
+  )
+}
+
+/** Kleiner Hinweis unter dem Ampel-Text, wenn deine Wertung von der berechneten abweicht */
+function NoteHint({ rating, note }: { rating: Rating; note?: PersonalNote }) {
+  if (!note || !rating || note.verdict === rating) return null
+  const worse = VERDICT_RANK[note.verdict] > VERDICT_RANK[rating]
+  return (
+    <p className="text-sm font-semibold mt-1" style={{ color: VERDICT_COLORS[note.verdict] }}>
+      {worse ? (note.verdict === "red" ? "· du meidest sie persönlich" : "· mit Vorbehalt") : "· du hörst sie trotzdem"}
+    </p>
   )
 }
 
@@ -127,6 +205,9 @@ export default function MetalDetectorPage() {
   const [watchlist, setWatchlist] = useState<WatchItem[]>([])
   const [isWatchlistOpen, setIsWatchlistOpen] = useState(false)
   const [currentInfo, setCurrentInfo] = useState<BandInfo | null>(null)
+  const [currentPercent, setCurrentPercent] = useState<number | null>(null)
+  const [notes, setNotes] = useState<NoteBook>({})
+  const [noteBand, setNoteBand] = useState<string | null>(null)
   const [aiSetting, setAiSetting] = useState<AiSetting>("haiku")
   const aiRef = useRef(new AiChat())
   // Aktuelle Werte für die KI-Werkzeuge (React-State wäre in laufenden Anfragen veraltet)
@@ -142,6 +223,7 @@ export default function MetalDetectorPage() {
   useEffect(() => {
     setUserProfile(loadProfile())
     setWatchlist(loadWatchlist())
+    setNotes(loadNotes())
     setAiSetting(loadAiSetting())
     setProfileLoaded(true)
     setSuggestions((s) => [...new Set([...getCachedBandNames(), ...s])])
@@ -155,6 +237,12 @@ export default function MetalDetectorPage() {
   useEffect(() => {
     if (profileLoaded) saveWatchlist(watchlist)
   }, [watchlist, profileLoaded])
+
+  // Persönliche Wertungen speichern und für Chat/KI bereitstellen
+  useEffect(() => {
+    notesBridge.connect(notes, setNotes)
+    if (profileLoaded) saveNotes(notes)
+  }, [notes, profileLoaded])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -171,6 +259,7 @@ export default function MetalDetectorPage() {
     const analysis = calculateMatch(name, info, profile)
     setCurrentBand(name)
     setCurrentInfo(info)
+    setCurrentPercent(analysis.rating ? analysis.matchPercentage : null)
     setRating(analysis.rating)
     setScoreDetails(analysis.scoreBreakdown)
     lastBandRef.current = { name, info }
@@ -180,8 +269,11 @@ export default function MetalDetectorPage() {
     if (info.source?.wikipedia) links += `\n[📖 Wikipedia](${info.source.wikipedia})`
     if (info.source?.wikidata) links += `\n[🗂️ Wikidata](${info.source.wikidata})`
     for (const src of info.source?.webSources?.slice(0, 3) ?? []) links += `\n[🌐 ${src.title.replace(/[[\]()]/g, "")}](${src.url})`
-    addMessage("assistant", `${analysis.explanation}\n\n${analysis.scoreBreakdown}\n\n${links}`, [
+    const note = getNote(notesBridge.get(), name)
+    const noteLine = note ? `\n\n📝 **Deine Wertung:** ${noteSummary(note)}` : ""
+    addMessage("assistant", `${analysis.explanation}${noteLine}\n\n${analysis.scoreBreakdown}\n\n${links}`, [
       { label: "❤️ Merken", type: "watch", value: name },
+      { label: note ? "📝 Deine Wertung" : "📝 Eigene Wertung", type: "note", value: name },
       { label: "🔎 Ähnliche Bands", type: "say", value: `Bands wie ${name}` },
       { label: "🎤 Live?", type: "say", value: `Wie ist ${name} live?` },
       { label: "❓ Warum?", type: "say", value: "Warum?" },
@@ -234,6 +326,7 @@ export default function MetalDetectorPage() {
       const analysis = calculateMatch(name, info, profileRef.current)
       setCurrentBand(name)
       setCurrentInfo(info)
+      setCurrentPercent(analysis.rating ? analysis.matchPercentage : null)
       setRating(analysis.rating)
       setScoreDetails(analysis.scoreBreakdown)
       lastBandRef.current = { name, info }
@@ -309,6 +402,8 @@ export default function MetalDetectorPage() {
       setUserProfile(undoRef.current)
       undoRef.current = null
       addMessage("assistant", "↩️ Rückgängig gemacht – dein Profil ist wieder wie vorher.")
+    } else if (action.type === "note") {
+      setNoteBand(action.value)
     } else if (action.type === "watch") {
       watchFromChip(action.value)
     } else if (action.type === "band") {
@@ -530,17 +625,37 @@ export default function MetalDetectorPage() {
           <Card className={cardStyle}>
             <CardContent className="p-6">
               <h2 className="text-xl font-bold text-zinc-100 mb-4 flex items-center gap-2">
-                <Mic className="w-5 h-5 text-zinc-400" />
-                Bewertung
+                <Mic className="w-5 h-5 text-zinc-400 shrink-0" />
+                <span className="truncate">Bewertung{currentBand ? ` · ${currentBand}` : ""}</span>
               </h2>
 
               <div className="space-y-4">
-                {/* Traffic Light */}
-                <div className="flex flex-col items-center gap-3 bg-black/60 rounded-xl p-6 border border-zinc-800/50 shadow-inner">
-                  <TrafficLight active={rating === "green"} color="#22c55e" />
-                  <TrafficLight active={rating === "yellow"} color="#eab308" />
-                  <TrafficLight active={rating === "red"} color="#ef4444" />
-                </div>
+                {/* Traffic Light – mit Band: berechnete Ampel links, deine Wertung rechts */}
+                {currentBand && currentInfo ? (
+                  <div className="grid grid-cols-[84px_1fr] gap-3 bg-black/60 rounded-xl p-3 border border-zinc-800/50 shadow-inner">
+                    <div className="flex flex-col items-center gap-2.5 border-r border-zinc-800 pr-3 py-1">
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">Profil</span>
+                      <TrafficLight small active={rating === "green"} color="#22c55e" />
+                      <TrafficLight small active={rating === "yellow"} color="#eab308" />
+                      <TrafficLight small active={rating === "red"} color="#ef4444" />
+                      {currentPercent !== null && (
+                        <span
+                          className="text-sm font-extrabold"
+                          style={{ color: rating === "green" ? "#4ade80" : rating === "yellow" ? "#facc15" : "#f87171" }}
+                        >
+                          {currentPercent} %
+                        </span>
+                      )}
+                    </div>
+                    <PersonalPanel note={getNote(notes, currentBand)} onEdit={() => setNoteBand(currentBand)} />
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center gap-3 bg-black/60 rounded-xl p-6 border border-zinc-800/50 shadow-inner">
+                    <TrafficLight active={rating === "green"} color="#22c55e" />
+                    <TrafficLight active={rating === "yellow"} color="#eab308" />
+                    <TrafficLight active={rating === "red"} color="#ef4444" />
+                  </div>
+                )}
 
                 {/* Rating Text */}
                 <AnimatePresence mode="wait">
@@ -555,6 +670,7 @@ export default function MetalDetectorPage() {
                       <p className="text-xl font-bold bg-gradient-to-r from-zinc-100 via-zinc-300 to-zinc-400 bg-clip-text text-transparent">
                         {getRatingText(rating)}
                       </p>
+                      {currentBand && <NoteHint rating={rating} note={getNote(notes, currentBand)} />}
                     </motion.div>
                   )}
                 </AnimatePresence>
@@ -683,6 +799,18 @@ export default function MetalDetectorPage() {
         </a>
         ) · Profile werden automatisch geschätzt
       </footer>
+
+      <NoteDialog
+        open={noteBand !== null}
+        onOpenChange={(open) => !open && setNoteBand(null)}
+        band={noteBand ?? ""}
+        note={noteBand ? getNote(notes, noteBand) : undefined}
+        onSave={(n) => {
+          setNotes((all) => setNote(all, n))
+          addMessage("assistant", `📝 Deine Wertung für **${n.band}** ist gespeichert: ${VERDICT_LABELS[n.verdict]}.`)
+        }}
+        onDelete={() => noteBand && setNotes((all) => removeNote(all, noteBand))}
+      />
 
       <WatchlistDialog
         open={isWatchlistOpen}
