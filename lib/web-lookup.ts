@@ -15,7 +15,7 @@ const SPARQL = "https://query.wikidata.org/sparql"
 const CACHE_KEY = "metal-detector-web-cache-v3"
 const CACHE_DAYS = 30
 // Wikimedia bittet Apps, sich zu erkennen zu geben (Browser dürfen den User-Agent nicht setzen)
-const API_USER_AGENT = "MetalDetector/1.0 (https://andreterzic-at.github.io/Metal-Detector/)"
+const API_USER_AGENT = "MetalDetector/1.0 (https://at-metaldetector.de)"
 
 type Tag = { name: string; count: number }
 type Claims = Record<string, { mainsnak: { datavalue?: { value: unknown } } }[]>

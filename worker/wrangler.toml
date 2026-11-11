@@ -9,7 +9,7 @@ preview_urls = false
 
 [vars]
 # Nur diese Seiten dürfen den Server benutzen
-ALLOWED_ORIGINS = "https://test.at-teamtools.de,https://app.at-teamtools.de,https://andreterzic-at.github.io,http://localhost:3000"
+ALLOWED_ORIGINS = "https://at-metaldetector.de,https://www.at-metaldetector.de,https://test.at-teamtools.de,https://app.at-teamtools.de,https://andreterzic-at.github.io,http://localhost:3000"
 # Tageslimit für alle Nutzer zusammen: eine Haiku-Anfrage = 1 Einheit, eine Opus-Anfrage = OPUS_COST Einheiten.
 # Eine Chat-Nachricht braucht je nach Werkzeugen 1–4 Anfragen.
 DAILY_BUDGET = "1000"
