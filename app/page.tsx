@@ -42,7 +42,10 @@ import { AiChat, AiError, aiAvailable, loadAiSetting, modelLabel, saveAiSetting,
 import { AI_MODELS } from "@/lib/ai-tools"
 import {
   defaultProfile,
+  disabledBridge,
+  loadDisabled,
   loadProfile,
+  saveDisabled,
   profileSections,
   saveProfile,
   type ProfileKey,
@@ -67,27 +70,66 @@ const inputStyle = "bg-black/60 border-zinc-600/50 text-zinc-100 placeholder:tex
 let messageCounter = 0
 
 // Außerhalb der Seite definiert, damit der Regler beim Ziehen nicht neu erzeugt wird
-function SliderControl({ label, value, onChange }: { label: string; value: number; onChange: (v: number) => void }) {
+function SliderControl({
+  label,
+  value,
+  onChange,
+  active = true,
+  onToggle,
+}: {
+  label: string
+  value: number
+  onChange: (v: number) => void
+  active?: boolean
+  onToggle?: () => void
+}) {
   return (
-    <div className="space-y-2">
+    <div className={`space-y-2 transition-opacity ${active ? "" : "opacity-60"}`}>
       <div className="flex justify-between items-center gap-2">
-        <label className="text-sm text-zinc-300 font-medium">{label}</label>
-        <span className="text-sm font-bold text-zinc-100 bg-zinc-800/50 px-2 py-1 rounded min-w-[2rem] text-center">{value}</span>
+        <label className={`text-sm font-medium ${active ? "text-zinc-300" : "text-zinc-500 line-through"}`}>{label}</label>
+        <div className="flex items-center gap-2 shrink-0">
+          <span
+            className={`text-sm font-bold px-2 py-1 rounded min-w-[2.6rem] text-center ${
+              active ? "text-zinc-100 bg-zinc-800/50" : "text-zinc-400 border border-dashed border-zinc-600"
+            }`}
+          >
+            {active ? value : "aus"}
+          </span>
+          {onToggle && (
+            <button
+              type="button"
+              role="switch"
+              aria-checked={active}
+              aria-label={`${label.split(" - ")[0]}: ${active ? "zählt mit – zum Ausschalten tippen" : "aus – zum Einschalten tippen"}`}
+              onClick={onToggle}
+              className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ${active ? "bg-green-500" : "bg-zinc-700"}`}
+            >
+              <span
+                className={`absolute top-0.5 w-5 h-5 rounded-full transition-all ${active ? "left-[22px] bg-white" : "left-0.5 bg-zinc-400"}`}
+              />
+            </button>
+          )}
+        </div>
       </div>
       <input
         type="range"
         min="0"
         max="10"
         value={value}
+        disabled={!active}
         onChange={(e) => onChange(parseInt(e.target.value))}
-        className="w-full h-2 rounded-lg appearance-none cursor-pointer slider"
-        style={{ background: "linear-gradient(to right, #ef4444 0%, #eab308 50%, #22c55e 100%)" }}
+        className={`w-full h-2 rounded-lg appearance-none slider ${active ? "cursor-pointer" : "cursor-not-allowed slider-off"}`}
+        style={{ background: active ? "linear-gradient(to right, #ef4444 0%, #eab308 50%, #22c55e 100%)" : "#27272a" }}
       />
-      <div className="flex justify-between text-[10px] sm:text-xs text-zinc-500">
-        <span>0 - Mag ich nicht</span>
-        <span>5 - Neutral</span>
-        <span>10 - Will ich viel</span>
-      </div>
+      {active ? (
+        <div className="flex justify-between text-[10px] sm:text-xs text-zinc-500">
+          <span>0 - Mag ich nicht</span>
+          <span>5 - Neutral</span>
+          <span>10 - Will ich viel</span>
+        </div>
+      ) : (
+        <p className="text-[11px] text-zinc-500">⏸ Zählt nicht mit – weder in der Ampel noch in den Empfehlungen.</p>
+      )}
     </div>
   )
 }
@@ -207,6 +249,7 @@ export default function MetalDetectorPage() {
   const [currentInfo, setCurrentInfo] = useState<BandInfo | null>(null)
   const [currentPercent, setCurrentPercent] = useState<number | null>(null)
   const [notes, setNotes] = useState<NoteBook>({})
+  const [disabled, setDisabled] = useState<ProfileKey[]>([])
   const [noteBand, setNoteBand] = useState<string | null>(null)
   const [aiSetting, setAiSetting] = useState<AiSetting>("haiku")
   const aiRef = useRef(new AiChat())
@@ -224,6 +267,7 @@ export default function MetalDetectorPage() {
     setUserProfile(loadProfile())
     setWatchlist(loadWatchlist())
     setNotes(loadNotes())
+    setDisabled(loadDisabled())
     setAiSetting(loadAiSetting())
     setProfileLoaded(true)
     setSuggestions((s) => [...new Set([...getCachedBandNames(), ...s])])
@@ -237,6 +281,20 @@ export default function MetalDetectorPage() {
   useEffect(() => {
     if (profileLoaded) saveWatchlist(watchlist)
   }, [watchlist, profileLoaded])
+
+  // Ausgeschaltete Themen speichern und für Berechnung/Chat/KI bereitstellen.
+  // Danach die aktuelle Band neu bewerten, damit die Ampel sofort stimmt.
+  useEffect(() => {
+    disabledBridge.connect(disabled, setDisabled)
+    if (profileLoaded) saveDisabled(disabled)
+    if (lastBandRef.current) {
+      const { name, info } = lastBandRef.current
+      const analysis = calculateMatch(name, info, profileRef.current)
+      setRating(analysis.rating)
+      setCurrentPercent(analysis.rating ? analysis.matchPercentage : null)
+      setScoreDetails(analysis.scoreBreakdown)
+    }
+  }, [disabled, profileLoaded])
 
   // Persönliche Wertungen speichern und für Chat/KI bereitstellen
   useEffect(() => {
@@ -690,7 +748,8 @@ export default function MetalDetectorPage() {
                         Profil-Engine
                       </DialogTitle>
                       <p className="text-sm text-zinc-400 mt-2">
-                        Bewertungsskala: 0 = Mag ich überhaupt nicht | 5 = Neutral | 10 = Davon will ich möglichst viel
+                        Bewertungsskala: 0 = Mag ich überhaupt nicht | 5 = Neutral | 10 = Davon will ich möglichst viel ·{" "}
+                        <b className="text-zinc-300">Schalter aus = ist mir egal, zählt nicht</b>
                       </p>
                     </DialogHeader>
 
@@ -741,6 +800,10 @@ export default function MetalDetectorPage() {
                                 label={s.question ? `${s.label} - ${s.question}` : s.label}
                                 value={userProfile[s.key]}
                                 onChange={(v) => setProfileValue(s.key, v)}
+                                active={!disabled.includes(s.key)}
+                                onToggle={() =>
+                                  setDisabled((d) => (d.includes(s.key) ? d.filter((k) => k !== s.key) : [...d, s.key]))
+                                }
                               />
                             ))}
                           </div>
@@ -750,7 +813,10 @@ export default function MetalDetectorPage() {
 
                     <div className="flex gap-2 mt-6">
                       <Button
-                        onClick={() => setUserProfile(defaultProfile)}
+                        onClick={() => {
+                          setUserProfile(defaultProfile)
+                          setDisabled([])
+                        }}
                         variant="outline"
                         className="flex-1 border-zinc-600 text-zinc-300 hover:bg-zinc-800"
                       >

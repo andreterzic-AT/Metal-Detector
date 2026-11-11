@@ -1,5 +1,5 @@
 import type { BandInfo } from "./bands"
-import { getPropertyLabel, type ProfileKey, type UserProfile } from "./profile"
+import { getPropertyLabel, isActive, type ProfileKey, type UserProfile } from "./profile"
 
 export type Rating = "green" | "yellow" | "red" | null
 
@@ -13,7 +13,7 @@ export type Dealbreaker = { key: ProfileKey; band: number; you: number; level: "
 
 export function findDealbreakers(bandProfile: BandInfo["profile"], userProfile: UserProfile): Dealbreaker[] {
   const result: Dealbreaker[] = []
-  for (const key of Object.keys(bandProfile) as ProfileKey[]) {
+  for (const key of (Object.keys(bandProfile) as ProfileKey[]).filter(isActive)) {
     const band = bandProfile[key]
     const you = userProfile[key]
     if (band === undefined || you === undefined) continue
@@ -32,7 +32,8 @@ export type MatchResult = {
 }
 
 export function calculateMatch(bandName: string, bandInfo: BandInfo, userProfile: UserProfile): MatchResult {
-  const profileKeys = Object.keys(bandInfo.profile) as ProfileKey[]
+  // Ausgeschaltete Themen ("ist mir egal") zählen nicht mit
+  const profileKeys = (Object.keys(bandInfo.profile) as ProfileKey[]).filter(isActive)
 
   if (profileKeys.length === 0) {
     return {

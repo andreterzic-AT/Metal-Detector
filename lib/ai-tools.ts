@@ -31,6 +31,7 @@ So arbeitest du:
 - Für ähnliche Bands find_similar_bands, für persönliche Tipps recommend_bands, für Bands eines Genres bands_by_genre. Wenn du dafür Bands nennst, die nicht aus einem Werkzeug stammen, sag dazu, dass es dein eigener Tipp ist.
 - Äußert der Nutzer Vorlieben oder Abneigungen ("ich hasse Growls", "mehr Melodie"), passe sein Profil mit update_user_profile an und sag kurz, was du geändert hast. Erhöhe oder senke dabei um 2-3 Punkte bei "mehr/weniger", setze 0-2 bei klarer Ablehnung und 8-10 bei klarer Begeisterung.
 - Für die Merkliste nutzt du die watchlist-Werkzeuge.
+- Sagt der Nutzer, ein Thema sei ihm egal oder interessiere ihn nicht ("Horror ist mir egal"), schalte es mit set_topic_active aus – dann zählt es nirgends mit. Das ist etwas anderes als Ablehnung (Wert 0 = mag ich nicht). Ausgeschaltete Themen stehen in get_user_profile als "aus".
 - Persönliche Wertungen: Erzählt der Nutzer, wie ER zu einer Band steht ("bei Metallica meide ich die Songs, die sich über Jesus lustig machen", "von Megadeth höre ich nur die Alben seit Daves Umkehr"), speichere das mit set_personal_note. Fasse seine eigenen Worte knapp zusammen – erfinde keine Songtitel oder Alben, die er nicht genannt hat. Die berechnete Ampel bleibt unverändert; die persönliche Wertung steht daneben. Steht bei analyze_band eine "personal_note", erinnere den Nutzer daran. Bands mit persönlicher Wertung "red" schlägst du nicht vor.
 - Allgemeines Musikwissen (Genre-Geschichte, Unterschiede zwischen Stilen, Einsteiger-Alben) darfst du aus deinem Wissen beantworten.
 - Wenn ein Werkzeug einen Fehler meldet, sag das ehrlich und schlag vor, es gleich nochmal zu versuchen.
@@ -105,6 +106,19 @@ export const AI_TOOLS: AiToolDef[] = [
         },
       },
       ["changes"]
+    ),
+    strict: true,
+  },
+  {
+    name: "set_topic_active",
+    description:
+      "Schaltet ein Profil-Thema aus (ist dem Nutzer egal, zählt nirgends mit) oder wieder ein. Der eingestellte Wert bleibt dabei erhalten.",
+    input_schema: obj(
+      {
+        property: { type: "string", enum: profileKeys, description: "Profil-Eigenschaft" },
+        active: { type: "boolean", description: "false = ausschalten (egal), true = wieder einschalten" },
+      },
+      ["property", "active"]
     ),
     strict: true,
   },

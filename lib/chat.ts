@@ -2,7 +2,7 @@ import type { BandInfo } from "./bands"
 import { findBand } from "./band-source"
 import { genreRules } from "./genre-rules"
 import { calculateMatch, findDealbreakers } from "./match"
-import { getPropertyLabel, type ProfileKey, type UserProfile } from "./profile"
+import { disabledBridge, getPropertyLabel, isActive, type ProfileKey, type UserProfile } from "./profile"
 import { apiPause, searchByGenre, type GenreBand } from "./web-lookup"
 import { findOnWatchlist, type WatchItem } from "./watchlist"
 import {
@@ -188,13 +188,13 @@ function parseProfileChanges(text: string, profile: UserProfile): { key: Profile
 export function rankGenres(profile: UserProfile) {
   // Eigenschaften, zu denen du eine klare Meinung hast, zählen stärker.
   // Fehlt einem Genre so eine Eigenschaft, gilt sie dort als neutral (5).
-  const strong = (Object.keys(profile) as ProfileKey[]).filter((k) => Math.abs(profile[k] - 5) >= 2)
+  const strong = (Object.keys(profile) as ProfileKey[]).filter((k) => isActive(k) && Math.abs(profile[k] - 5) >= 2)
   return genreRules
     .filter((r) => Object.keys(r.values).length >= 5 && r.match !== "rock")
     // Genres mit einem Ausschlusskriterium (z. B. satanische Symbolik bei Black Metal) nie empfehlen
     .filter((r) => !findDealbreakers(r.values, profile).some((d) => d.level === "red"))
     .map((r) => {
-      const keys = [...new Set([...(Object.keys(r.values) as ProfileKey[]), ...strong])]
+      const keys = [...new Set([...(Object.keys(r.values) as ProfileKey[]).filter(isActive), ...strong])]
       let score = 0
       let max = 0
       for (const k of keys) {
@@ -360,7 +360,7 @@ async function compare(a: string, b: string, ctx: Ctx): Promise<ChatOutcome> {
   const icon = (r: typeof m1.rating) => (r === "green" ? "🟢" : r === "yellow" ? "🟡" : r === "red" ? "🔴" : "⚪")
 
   // Wo unterscheiden sich die beiden Bands am meisten?
-  const keys = (Object.keys(first.info.profile) as ProfileKey[]).filter((k) => second.info.profile[k] !== undefined)
+  const keys = (Object.keys(first.info.profile) as ProfileKey[]).filter((k) => isActive(k) && second.info.profile[k] !== undefined)
   const diffs = keys
     .map((k) => ({ k, a: first.info.profile[k]!, b: second.info.profile[k]! }))
     .filter((d) => Math.abs(d.a - d.b) >= 3)
@@ -386,7 +386,7 @@ async function liveInfo(query: string, ctx: Ctx): Promise<ChatOutcome> {
   const band = await resolveBand(query, ctx)
   if (typeof band === "string") return { replies: [{ text: band }] }
   const liveKeys: ProfileKey[] = ["liveEnergie", "moshpitFaktor", "publikumsenergie", "buehnenpraesenz", "publikumsinteraktion", "festivalTauglichkeit"]
-  const known = liveKeys.filter((k) => band.info.profile[k] !== undefined)
+  const known = liveKeys.filter((k) => isActive(k) && band.info.profile[k] !== undefined)
   if (known.length === 0) return { replies: [{ text: `Zur Live-Show von **${band.name}** habe ich leider keine Daten.` }], lastBand: band }
 
   const avg = known.reduce((s, k) => s + band.info.profile[k]!, 0) / known.length
@@ -399,7 +399,7 @@ async function liveInfo(query: string, ctx: Ctx): Promise<ChatOutcome> {
 function explainLast(ctx: Ctx): ChatOutcome {
   if (!ctx.lastBand) return { replies: [{ text: "Worauf beziehst du dich? Such zuerst eine Band 🎸" }] }
   const { name, info } = ctx.lastBand
-  const keys = (Object.keys(info.profile) as ProfileKey[]).filter((k) => info.profile[k] !== undefined)
+  const keys = (Object.keys(info.profile) as ProfileKey[]).filter((k) => isActive(k) && info.profile[k] !== undefined)
   const rows = keys.map((k) => ({ k, band: info.profile[k]!, you: ctx.profile[k], diff: Math.abs(info.profile[k]! - ctx.profile[k]) }))
   const good = rows.filter((r) => r.diff <= 2).sort((a, b) => Math.max(b.band, b.you) - Math.max(a.band, a.you)).slice(0, 4)
   const bad = rows.sort((a, b) => b.diff - a.diff).filter((r) => r.diff >= 4).slice(0, 4)
@@ -431,12 +431,14 @@ function profileSummary(profile: UserProfile): ChatOutcome {
       ],
     }
   }
-  const entries = Object.entries(profile) as [ProfileKey, number][]
+  const entries = (Object.entries(profile) as [ProfileKey, number][]).filter(([k]) => isActive(k))
+  const off = disabledBridge.get()
   const likes = entries.filter(([, v]) => v >= 7).sort((a, b) => b[1] - a[1])
   const dislikes = entries.filter(([, v]) => v <= 3).sort((a, b) => a[1] - b[1])
   let text = "👤 **Dein Profil:**\n\n"
   if (likes.length) text += `❤️ **Magst du:**\n${likes.slice(0, 8).map(([k, v]) => `• ${getPropertyLabel(k)} (${v})`).join("\n")}\n\n`
   if (dislikes.length) text += `🚫 **Magst du nicht:**\n${dislikes.slice(0, 8).map(([k, v]) => `• ${getPropertyLabel(k)} (${v})`).join("\n")}\n\n`
+  if (off.length) text += `⏸ **Ist dir egal (zählt nicht):** ${off.map(getPropertyLabel).join(", ")}\n\n`
   const genres = rankGenres(profile).slice(0, 3)
   text += `🎯 **Deine Richtung:** ${genres.map((g) => `${g.genre} (${g.percent}%)`).join(", ")}`
   return { replies: [{ text, actions: [sayAction("Empfiehl mir was")] }] }
@@ -607,6 +609,34 @@ function handleNoteIntent(text: string, n: string, ctx: Ctx): ChatOutcome | null
   return null
 }
 
+// ---------- Themen aus-/einschalten ----------
+
+const TOPIC_OFF = /(ist mir egal|sind mir egal|egal|wurscht|interessiert mich nicht|interessieren mich nicht|zaehlt nicht|soll nicht (mehr )?zaehlen|ausschalten|schalt\w* .*aus|deaktivier)/
+const TOPIC_ON = /(wieder an|wieder einschalten|einschalten|schalt\w* .*(wieder )?ein|aktivier|zaehlt wieder|wieder mitzaehlen|wieder rein)/
+
+function handleTopicToggle(n: string): ChatOutcome | null {
+  const on = TOPIC_ON.test(n)
+  const off = !on && TOPIC_OFF.test(n)
+  if (!on && !off) return null
+  const keys = findProperties(n)
+  if (keys.length === 0) return null
+  const labels = keys.map(getPropertyLabel)
+  const current = disabledBridge.get()
+  if (off) {
+    disabledBridge.set([...new Set([...current, ...keys])])
+    return {
+      replies: [
+        {
+          text: `⏸ Ausgeschaltet: **${labels.join(", ")}** – zählt ab jetzt nicht mehr mit, weder in der Ampel noch in den Empfehlungen. Dein eingestellter Wert bleibt gespeichert.`,
+          actions: [{ label: "↩️ Rückgängig", type: "say", value: `${labels.join(" und ")} wieder an` }],
+        },
+      ],
+    }
+  }
+  disabledBridge.set(current.filter((k) => !keys.includes(k)))
+  return { replies: [{ text: `▶️ Wieder eingeschaltet: **${labels.join(", ")}** – zählt wieder mit.` }] }
+}
+
 // ---------- Hauptfunktion ----------
 
 export async function respond(input: string, ctx: Ctx): Promise<ChatOutcome> {
@@ -701,13 +731,22 @@ export async function respond(input: string, ctx: Ctx): Promise<ChatOutcome> {
     }
   }
 
+  // Themen aus-/einschalten: "Horror ist mir egal" / "Horror wieder an"
+  const toggled = handleTopicToggle(n)
+  if (toggled) return toggled
+
   // Profil per Chat ändern
   const changes = parseProfileChanges(text, ctx.profile)
   if (changes.length > 0) {
     const profile = { ...ctx.profile }
     for (const c of changes) profile[c.key] = c.to
+    // Wer einem ausgeschalteten Thema einen Wert gibt, will es offenbar wieder mitzählen lassen
+    const reactivated = changes.filter((c) => !isActive(c.key)).map((c) => c.key)
+    if (reactivated.length) disabledBridge.set(disabledBridge.get().filter((k) => !reactivated.includes(k)))
     const shown = changes.filter((c) => c.key !== "innereKaempfeTexte" || !changes.some((x) => x.key === "innereKaempfe"))
-    const lines = shown.map((c) => `• ${getPropertyLabel(c.key)}: ${c.from} → **${c.to}**`).join("\n")
+    const lines = shown
+      .map((c) => `• ${getPropertyLabel(c.key)}: ${c.from} → **${c.to}**${reactivated.includes(c.key) ? " (wieder eingeschaltet)" : ""}`)
+      .join("\n")
     return {
       replies: [{ text: `Alles klar, ich habe dein Profil angepasst ✍️\n\n${lines}`, actions: [{ label: "↩️ Rückgängig", type: "undo", value: "" }, sayAction("Empfiehl mir was")] }],
       profile,

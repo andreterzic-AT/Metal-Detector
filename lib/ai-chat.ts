@@ -4,7 +4,7 @@ import { bandGenres, genreRecommendations, rankGenres, type ChatAction, type Las
 import { AI_LIMITS, AI_MODELS, type AiModelKey } from "./ai-tools"
 import { calculateMatch, findDealbreakers } from "./match"
 import { getNote, noteSummary, notesBridge, redNoteBands, removeNote, setNote, type NoteVerdict } from "./personal-notes"
-import { getPropertyLabel, type ProfileKey, type UserProfile } from "./profile"
+import { disabledBridge, getPropertyLabel, isActive, type ProfileKey, type UserProfile } from "./profile"
 import { apiPause, searchByGenre, type GenreBand } from "./web-lookup"
 import {
   addToWatchlist,
@@ -77,7 +77,7 @@ const ratingLabel = (r: string | null) =>
 
 function bandSummary(name: string, info: BandInfo, profile: UserProfile) {
   const m = calculateMatch(name, info, profile)
-  const keys = Object.keys(info.profile) as ProfileKey[]
+  const keys = (Object.keys(info.profile) as ProfileKey[]).filter(isActive)
   const rows = keys.map((k) => ({ k, band: info.profile[k]!, you: profile[k], diff: Math.abs(info.profile[k]! - profile[k]) }))
   const fmt = (r: (typeof rows)[number]) => `${getPropertyLabel(r.k)}: Band ${r.band}, Nutzer ${r.you}`
   const liveKeys: ProfileKey[] = ["liveEnergie", "moshpitFaktor", "publikumsenergie", "buehnenpraesenz", "publikumsinteraktion", "festivalTauglichkeit"]
@@ -158,7 +158,9 @@ async function runTool(name: string, input: Record<string, unknown>, deps: AiDep
       return { result: { genre: input.genre, bands }, actions: bands.slice(0, 6).map((b) => bandChip(b.name)) }
     }
     case "get_user_profile": {
-      const values = Object.fromEntries((Object.keys(profile) as ProfileKey[]).map((k) => [`${k} (${getPropertyLabel(k)})`, profile[k]]))
+      const values = Object.fromEntries(
+        (Object.keys(profile) as ProfileKey[]).map((k) => [`${k} (${getPropertyLabel(k)})`, isActive(k) ? profile[k] : "aus (ist dem Nutzer egal, zählt nicht)"])
+      )
       return {
         result: {
           profile_is_still_neutral: Object.values(profile).every((v) => v === 5),
@@ -182,7 +184,21 @@ async function runTool(name: string, input: Record<string, unknown>, deps: AiDep
       }
       if (done.length === 0) return { result: "Keine gültigen Änderungen", isError: true }
       deps.applyProfile(next)
+      // Einem ausgeschalteten Thema einen Wert geben = wieder einschalten
+      const changedKeys = changes.map((c) => c.property as ProfileKey)
+      if (changedKeys.some((k) => !isActive(k))) disabledBridge.set(disabledBridge.get().filter((k) => !changedKeys.includes(k)))
       return { result: { changed: done }, actions: [{ label: "↩️ Profiländerung rückgängig", type: "undo", value: "" }] }
+    }
+    case "set_topic_active": {
+      const key = String(input.property ?? "") as ProfileKey
+      if (!(key in profile)) return { result: "Unbekannte Eigenschaft", isError: true }
+      const active = Boolean(input.active)
+      const current = disabledBridge.get()
+      disabledBridge.set(active ? current.filter((k) => k !== key) : [...new Set([...current, key])])
+      return {
+        result: `${getPropertyLabel(key)} ist jetzt ${active ? "eingeschaltet (zählt mit)" : "ausgeschaltet (zählt nicht mit)"}`,
+        actions: active ? [] : [{ label: `↩️ ${getPropertyLabel(key)} wieder an`, type: "say", value: `${getPropertyLabel(key)} wieder an` }],
+      }
     }
     case "set_personal_note": {
       const bandName = String(input.band ?? "").trim()

@@ -164,3 +164,47 @@ export function saveProfile(profile: UserProfile) {
     // Speicher nicht verfügbar (z. B. privater Modus) – App funktioniert trotzdem
   }
 }
+
+// ---------- Ausgeschaltete Themen ("ist mir egal") ----------
+// Ein ausgeschaltetes Thema zählt nirgends mit: nicht in der Ampel, nicht bei Ausschlusskriterien,
+// nicht in Empfehlungen. Der eingestellte Wert bleibt erhalten, falls es wieder eingeschaltet wird.
+
+const DISABLED_KEY = "metal-detector-disabled"
+const allKeys = new Set<string>(allSliders.map((s) => s.key))
+
+export function loadDisabled(): ProfileKey[] {
+  try {
+    const raw = JSON.parse(localStorage.getItem(DISABLED_KEY) || "[]")
+    return Array.isArray(raw) ? raw.filter((k): k is ProfileKey => allKeys.has(k)) : []
+  } catch {
+    return []
+  }
+}
+
+export function saveDisabled(keys: ProfileKey[]) {
+  try {
+    localStorage.setItem(DISABLED_KEY, JSON.stringify(keys))
+  } catch {
+    /* egal */
+  }
+}
+
+/** Aktueller Stand für Berechnung, Chat und KI (die Seite hält ihn aktuell) */
+let disabledNow = new Set<ProfileKey>()
+let onDisabledChange: ((keys: ProfileKey[]) => void) | null = null
+
+export const disabledBridge = {
+  get: (): ProfileKey[] => [...disabledNow],
+  has: (key: ProfileKey) => disabledNow.has(key),
+  set: (keys: ProfileKey[]) => {
+    disabledNow = new Set(keys)
+    onDisabledChange?.([...disabledNow])
+  },
+  connect: (keys: ProfileKey[], listener: (keys: ProfileKey[]) => void) => {
+    disabledNow = new Set(keys)
+    onDisabledChange = listener
+  },
+}
+
+/** Nur die Themen, die mitzählen */
+export const isActive = (key: ProfileKey) => !disabledNow.has(key)

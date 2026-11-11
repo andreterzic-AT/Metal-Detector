@@ -36,3 +36,15 @@ body {
   border: none;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
 }
+
+/* Ausgeschaltetes Thema: Regler-Knopf grau */
+.slider-off::-webkit-slider-thumb {
+  background: #52525b;
+  box-shadow: none;
+  cursor: not-allowed;
+}
+.slider-off::-moz-range-thumb {
+  background: #52525b;
+  box-shadow: none;
+  cursor: not-allowed;
+}
