@@ -37,21 +37,23 @@ export interface Env {
 
 const BAND_CACHE_DAYS = 30
 const NOT_FOUND_CACHE_DAYS = 2
+// Neue Version, wenn sich die Recherche-Regeln ändern → alte Ergebnisse werden nicht mehr benutzt
+const CACHE_PREFIX = "band-v2:"
 
 export class BandCache extends DurableObject {
   async read(key: string): Promise<BandResearch | null> {
-    const entry = await this.ctx.storage.get<{ at: number; data: BandResearch }>(`band:${key}`)
+    const entry = await this.ctx.storage.get<{ at: number; data: BandResearch }>(`${CACHE_PREFIX}${key}`)
     if (!entry) return null
     const maxAge = (entry.data.found ? BAND_CACHE_DAYS : NOT_FOUND_CACHE_DAYS) * 86400000
     if (Date.now() - entry.at > maxAge) {
-      await this.ctx.storage.delete(`band:${key}`)
+      await this.ctx.storage.delete(`${CACHE_PREFIX}${key}`)
       return null
     }
     return entry.data
   }
 
   async write(key: string, data: BandResearch): Promise<void> {
-    await this.ctx.storage.put(`band:${key}`, { at: Date.now(), data })
+    await this.ctx.storage.put(`${CACHE_PREFIX}${key}`, { at: Date.now(), data })
   }
 }
 

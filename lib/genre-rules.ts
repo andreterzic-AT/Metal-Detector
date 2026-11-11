@@ -3,6 +3,11 @@ import type { UserProfile } from "./profile"
 type Partial10 = Partial<UserProfile>
 
 /**
+ * WICHTIG: Weltanschauung (Satanismus, Gotteslästerung, Religionskritik, Okkultismus, Heidentum,
+ * christliche Themen) wird hier NIE aus einem allgemeinen Genre abgeleitet – nicht jede Black-Metal-Band
+ * ist satanistisch. Solche Werte kommen nur aus Belegen zur einzelnen Band (Wikipedia-Sätze über ihre
+ * Texte, KI-Recherche) oder aus Genres, die es ausdrücklich benennen ("christian metal", "pagan metal").
+ *
  * Genre-Regeln: Wenn eine Band ein passendes Genre auf Wikidata hat (oder es im Wikipedia-Artikel oft vorkommt),
  * fließen diese Werte (gewichtet nach Tag-Häufigkeit) in ihr Profil ein.
  * Mehrere Genres werden gemittelt, z. B. "melodic death metal" trifft
@@ -18,8 +23,8 @@ export const genreRules: { match: string; values: Partial10 }[] = [
   { match: "melodic death metal", values: { haerte: 8, melodie: 8, atmosphaere: 6, technik: 8, cleanVocals: 2, growls: 8, screams: 5, horror: 3 } },
   { match: "technical death metal", values: { technik: 10, progressive: 8 } },
   { match: "brutal death metal", values: { haerte: 10, melodie: 1, horror: 9 } },
-  { match: "black metal", values: { haerte: 9, melodie: 4, atmosphaere: 9, melancholie: 7, cleanVocals: 1, growls: 3, screams: 10, dunkelheitAesthetik: 10, satanischeSymbolik: 7, antiReligion: 7, gotteslaesterung: 6, okkultismus: 6, spirituelleNeutralitaet: 2 } },
-  { match: "atmospheric black metal", values: { atmosphaere: 10, natur: 8, melancholie: 8, satanischeSymbolik: 3, antiReligion: 4 } },
+  { match: "black metal", values: { haerte: 9, melodie: 4, atmosphaere: 9, melancholie: 7, cleanVocals: 1, growls: 3, screams: 10, dunkelheitAesthetik: 10 } },
+  { match: "atmospheric black metal", values: { atmosphaere: 10, natur: 8, melancholie: 8 } },
   { match: "symphonic black metal", values: { symphonisch: 9, atmosphaere: 9 } },
   { match: "depressive", values: { melancholie: 10, verlustTrauer: 9, innereKaempfe: 9, innereKaempfeTexte: 9, nihilismus: 8, hoffnung: 1 } },
   { match: "doom metal", values: { haerte: 7, melodie: 5, atmosphaere: 9, melancholie: 10, groove: 6, technik: 4, verlustTrauer: 7, dunkelheitAesthetik: 8, moshpitFaktor: 3 } },
@@ -44,14 +49,14 @@ export const genreRules: { match: string; values: Partial10 }[] = [
   { match: "neue deutsche härte", values: { haerte: 7, groove: 9, melodie: 7, cleanVocals: 8, growls: 0, screams: 1, buehnenpraesenz: 10, publikumsenergie: 10, festivalTauglichkeit: 10 } },
   { match: "grindcore", values: { haerte: 10, melodie: 0, technik: 6, growls: 9, screams: 9, cleanVocals: 0, gesellschaftskritik: 7, horror: 6, moshpitFaktor: 10 } },
   { match: "crust", values: { gesellschaftskritik: 9, haerte: 8 } },
-  { match: "folk metal", values: { melodie: 8, atmosphaere: 7, natur: 8, mythologie: 8, heidentum: 7, abenteuer: 6, festivalTauglichkeit: 10, publikumsenergie: 9, publikumsinteraktion: 8 } },
-  { match: "viking metal", values: { mythologie: 10, heidentum: 9, krieg: 8, geschichte: 7, abenteuer: 7 } },
+  { match: "folk metal", values: { melodie: 8, atmosphaere: 7, natur: 8, mythologie: 8, abenteuer: 6, festivalTauglichkeit: 10, publikumsenergie: 9, publikumsinteraktion: 8 } },
+  { match: "viking metal", values: { mythologie: 10, krieg: 8, geschichte: 7, abenteuer: 7 } },
   { match: "pagan", values: { heidentum: 10, natur: 8, mythologie: 8, mystik: 7 } },
-  { match: "celtic", values: { mythologie: 8, natur: 7, heidentum: 6 } },
+  { match: "celtic", values: { mythologie: 8, natur: 7 } },
   { match: "pirate metal", values: { abenteuer: 10, fantasy: 6, publikumsinteraktion: 9, festivalTauglichkeit: 10 } },
-  { match: "occult", values: { okkultismus: 9, mystik: 8, satanischeSymbolik: 6, dunkelheitAesthetik: 8 } },
+  { match: "occult", values: { okkultismus: 9, mystik: 8, dunkelheitAesthetik: 8 } },
   { match: "satanic", values: { satanischeSymbolik: 10, antiReligion: 8, gotteslaesterung: 7, okkultismus: 7 } },
-  { match: "war metal", values: { krieg: 10, haerte: 10, gotteslaesterung: 7 } },
+  { match: "war metal", values: { krieg: 10, haerte: 10 } },
   { match: "space", values: { kosmos: 9, scienceFiction: 8, atmosphaere: 8 } },
   { match: "cyber", values: { scienceFiction: 9 } },
   { match: "epic", values: { symphonisch: 7, fantasy: 7, abenteuer: 6 } },

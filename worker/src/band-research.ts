@@ -40,7 +40,7 @@ Rules:
 - genres: up to 5 genres in English, lowercase (e.g. "melodic death metal", "metalcore").
 - themes: up to 6 lyrical themes in German.
 - spotify_url: only an open.spotify.com/artist/... link you actually saw, otherwise "".
-- profile: rate each property 0-10 for how strongly it describes this band (0 = not at all, 5 = somewhat, 10 = defining). Use -1 only if you have no basis at all. Be careful with ideology: rate satanic symbolism, blasphemy, anti-religion, occultism or Christian themes high only if sources support it; a dark image alone is not satanism.
+- profile: rate each property 0-10 for how strongly it describes this band (0 = not at all, 5 = somewhat, 10 = defining). Use -1 only if you have no basis at all. Be careful with ideology (satanicSymbolism-type properties: satanischeSymbolik, gotteslaesterung, antiReligion, okkultismus, heidentum, christlicheThemen, religioeseThemen, nihilismus): rate them only from evidence about THIS band's lyrics, statements or imagery. The genre alone is never evidence - many black metal bands write about nature, melancholy, history or philosophy and are not satanic, and many folk/viking metal bands are not religiously pagan. Corpse paint or a dark image alone is not satanism. If there is no band-specific evidence, use -1.
 
 Profile properties:
 ${sliders.map((s) => `- ${s.key}: ${s.label}${s.question ? ` (${s.question})` : ""}`).join("\n")}`

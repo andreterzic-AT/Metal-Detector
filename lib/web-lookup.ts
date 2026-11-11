@@ -12,7 +12,7 @@ import { genreRules, overrideRules, themeKeywords } from "./genre-rules"
 
 const WIKIDATA_API = "https://www.wikidata.org/w/api.php"
 const SPARQL = "https://query.wikidata.org/sparql"
-const CACHE_KEY = "metal-detector-web-cache-v2"
+const CACHE_KEY = "metal-detector-web-cache-v3"
 const CACHE_DAYS = 30
 // Wikimedia bittet Apps, sich zu erkennen zu geben (Browser dürfen den User-Agent nicht setzen)
 const API_USER_AGENT = "MetalDetector/1.0 (https://andreterzic-at.github.io/Metal-Detector/)"
@@ -186,26 +186,53 @@ const wordRegex = (w: string) => {
 // Sätze, die etwas über Texte/Themen aussagen
 const LYRIC_CONTEXT = /lyric|theme|thematic|concept|subject matter|inspired by|deals? with|dealing with|focus(es|ed)? on|topics?|imagery|message|songs? about|album about|sings? about|writes? about|ideolog|beliefs?/i
 
+// Weltanschauungs-Themen: hier gelten strengere Regeln (Belege statt Vermutungen)
+const IDEOLOGY_KEYS = new Set<keyof UserProfile>([
+  "satanischeSymbolik",
+  "gotteslaesterung",
+  "antiReligion",
+  "okkultismus",
+  "heidentum",
+  "christlicheThemen",
+  "religioeseThemen",
+  "nihilismus",
+])
+
+// Sätze wie "the band is not satanic" oder "they reject Satanism" sind kein Beleg
+const NEGATION =
+  /\b(not|never|no longer|nor|neither|deny|denies|denied|denying|reject|rejects|rejected|rejecting|distance[sd]?|refuse[sd]?|contrary|misconception|mistakenly|falsely|accus\w*|criticiz\w*|criticis\w*|opposed?|against)\b|n't\b/i
+
 function analyzeText(article: string) {
   const sentences = article.split(/(?<=[.!?])\s+/).filter((s) => LYRIC_CONTEXT.test(s))
-  const text = sentences.join(" ").toLowerCase()
+  const lower = sentences.map((s) => s.toLowerCase())
   const values: Partial<UserProfile> = {}
   const found: string[] = []
 
-  const count = (words: string[]) => words.reduce((n, w) => n + (text.match(wordRegex(w))?.length ?? 0), 0)
-  const satanic = count(themeKeywords.find((g) => g.keys.includes("satanischeSymbolik"))?.words ?? [])
+  /** Treffer zählen; bei Weltanschauungs-Themen Sätze mit Verneinung überspringen */
+  const count = (words: string[], ideology: boolean) =>
+    lower.reduce((n, sentence) => {
+      if (ideology && NEGATION.test(sentence)) return n
+      return n + words.reduce((m, w) => m + (sentence.match(wordRegex(w))?.length ?? 0), 0)
+    }, 0)
+
+  const satanicWords = themeKeywords.find((g) => g.keys.includes("satanischeSymbolik"))?.words ?? []
+  const satanic = count(satanicWords, true)
   for (const group of themeKeywords) {
-    const hits = count(group.words)
+    const ideology = group.keys.some((k) => IDEOLOGY_KEYS.has(k))
+    const hits = count(group.words, ideology)
     if (hits === 0) continue
     // Spielt eine Band mit satanischer Symbolik auf das Christentum an, ist das meist Parodie/Kritik,
     // keine christliche Botschaft → dann nur als "Religion" werten
     if (group.keys.includes("christlicheThemen") && satanic >= hits) {
-      values.religioeseThemen = Math.max(values.religioeseThemen ?? 0, 7)
+      values.religioeseThemen = Math.max(values.religioeseThemen ?? 0, 6)
       continue
     }
-    const v = hits >= 5 ? 10 : hits >= 3 ? 9 : hits === 2 ? 8 : 7
+    // Weltanschauung: eine einzelne Erwähnung ist nur ein Hinweis (4), erst mehrere Belege zählen stark
+    const v = ideology
+      ? hits >= 5 ? 9 : hits >= 3 ? 8 : hits === 2 ? 6 : 4
+      : hits >= 5 ? 10 : hits >= 3 ? 9 : hits === 2 ? 8 : 7
     for (const k of group.keys) values[k] = Math.max(values[k] ?? 0, v)
-    found.push(group.label)
+    if (v >= 6 || !ideology) found.push(group.label)
   }
   return { values, found, sentenceCount: sentences.length }
 }
