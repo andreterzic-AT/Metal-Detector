@@ -1,5 +1,6 @@
 "use client"
 
+import Link from "next/link"
 import { useState, useRef, useEffect } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { Send, Music, Mic, Search, Volume2, ExternalLink, Info, Settings, Loader2, Heart } from "lucide-react"
@@ -864,6 +865,14 @@ export default function MetalDetectorPage() {
           CC BY-SA 4.0
         </a>
         ) · Profile werden automatisch geschätzt
+        <br />
+        <Link href="/impressum/" className="underline">
+          Impressum
+        </Link>{" "}
+        ·{" "}
+        <Link href="/datenschutz/" className="underline">
+          Datenschutz
+        </Link>
       </footer>
 
       <NoteDialog
