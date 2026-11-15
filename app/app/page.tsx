@@ -1,6 +1,7 @@
 "use client"
 
 import Link from "next/link"
+import { BAND_NAME_NOTICE } from "@/lib/site"
 import { useState, useRef, useEffect } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { Send, Mic, Search, Volume2, ExternalLink, Info, Settings, Loader2, Heart } from "lucide-react"
@@ -878,6 +879,8 @@ export default function MetalDetectorPage() {
         <Link href="/datenschutz/" className="underline">
           Datenschutz
         </Link>
+        <br />
+        {BAND_NAME_NOTICE}
       </footer>
 
       <NoteDialog

@@ -16,7 +16,7 @@ import {
   Gauge,
 } from "lucide-react"
 import { StandaloneRedirect } from "@/components/standalone-redirect"
-import { STORE_LINKS, asset } from "@/lib/site"
+import { BAND_NAME_NOTICE, STORE_LINKS, asset } from "@/lib/site"
 import { PROVIDER } from "@/lib/legal"
 
 export const metadata: Metadata = {
@@ -308,6 +308,7 @@ export default function Landing() {
           </a>
           )
         </p>
+        <p>{BAND_NAME_NOTICE}</p>
       </footer>
     </div>
   )

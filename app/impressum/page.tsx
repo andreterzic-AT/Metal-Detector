@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
 import { LegalPage } from "@/components/legal-page"
 import { PROVIDER as P } from "@/lib/legal"
+import { BAND_NAME_NOTICE } from "@/lib/site"
 
 export const metadata: Metadata = { title: "Impressum · Metal Detector" }
 
@@ -69,6 +70,14 @@ export default function Impressum() {
         <p>
           Die App enthält Links zu externen Websites Dritter (z. B. Wikipedia, Spotify), auf deren Inhalte wir keinen
           Einfluss haben. Für diese fremden Inhalte ist stets der jeweilige Anbieter verantwortlich.
+        </p>
+      </section>
+
+      <section>
+        <h2>Marken und Bandnamen</h2>
+        <p>
+          {BAND_NAME_NOTICE} Alle genannten Namen und Marken gehören ihren jeweiligen Inhabern. Band-Logos, Albumcover,
+          Fotos und Songtexte werden nicht verwendet.
         </p>
       </section>
 
