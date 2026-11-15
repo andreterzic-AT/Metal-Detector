@@ -1,15 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#27272a"/><stop offset="1" stop-color="#000"/>
-    </linearGradient>
-    <linearGradient id="m" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#f4f4f5"/><stop offset="1" stop-color="#71717a"/>
-    </linearGradient>
-  </defs>
-  <rect width="512" height="512" fill="url(#bg)"/>
-  <rect x="176" y="96" width="160" height="320" rx="40" fill="#0a0a0a" stroke="url(#m)" stroke-width="12"/>
-  <circle cx="256" cy="166" r="40" fill="#22c55e"/>
-  <circle cx="256" cy="256" r="40" fill="#eab308" opacity=".35"/>
-  <circle cx="256" cy="346" r="40" fill="#ef4444" opacity=".35"/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><defs>
+<linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+<stop offset="0" stop-color="#fff1b8"/><stop offset=".35" stop-color="#e2b24a"/><stop offset=".6" stop-color="#9a6a12"/><stop offset=".8" stop-color="#e9c25e"/><stop offset="1" stop-color="#7a5208"/></linearGradient>
+<linearGradient id="silver" x1="0" y1="0" x2="0" y2="1">
+<stop offset="0" stop-color="#ffffff"/><stop offset=".45" stop-color="#c9ccd2"/><stop offset=".55" stop-color="#8b9099"/><stop offset="1" stop-color="#e6e8ec"/></linearGradient>
+<radialGradient id="bg" cx=".5" cy=".4" r=".7"><stop offset="0" stop-color="#26262b"/><stop offset="1" stop-color="#09090b"/></radialGradient>
+</defs><rect width="512" height="512" rx="0" fill="url(#bg)"/><path d="M436.6,233.6 L467.2,237.9 L467.2,274.1 L436.6,278.4 L428.5,314.2 L454.1,331.4 L438.5,363.9 L409.0,354.6 L386.1,383.2 L401.8,409.9 L373.6,432.4 L351.1,411.2 L318.0,427.1 L320.6,457.9 L285.4,466.0 L274.3,437.1 L237.7,437.1 L226.6,466.0 L191.4,457.9 L194.0,427.1 L160.9,411.2 L138.4,432.4 L110.2,409.9 L125.9,383.2 L103.0,354.6 L73.5,363.9 L57.9,331.4 L83.5,314.2 L75.4,278.4 L44.8,274.1 L44.8,237.9 L75.4,233.6 L83.5,197.8 L57.9,180.6 L73.5,148.1 L103.0,157.4 L125.9,128.8 L110.2,102.1 L138.4,79.6 L160.9,100.8 L194.0,84.9 L191.4,54.1 L226.6,46.0 L237.7,74.9 L274.3,74.9 L285.4,46.0 L320.6,54.1 L318.0,84.9 L351.1,100.8 L373.6,79.6 L401.8,102.1 L386.1,128.8 L409.0,157.4 L438.5,148.1 L454.1,180.6 L428.5,197.8Z M406,256 A150,150 0 1,0 106,256 A150,150 0 1,0 406,256Z" fill="url(#gold)" fill-rule="evenodd" stroke="#4a3205" stroke-width="2"/><path d="M256,128 C330,128 372,160 372,212 C372,290 300,370 256,392 C212,370 140,290 140,212 C140,160 182,128 256,128Z" fill="url(#silver)" stroke="#3a3d44" stroke-width="3"/><path d="M276,170 L218,272 L258,272 L232,356 L300,240 L258,240 Z" fill="#0b0b0d"/></svg>

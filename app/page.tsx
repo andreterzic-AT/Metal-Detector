@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { useState, useRef, useEffect } from "react"
 import { motion, AnimatePresence } from "framer-motion"
-import { Send, Music, Mic, Search, Volume2, ExternalLink, Info, Settings, Loader2, Heart } from "lucide-react"
+import { Send, Mic, Search, Volume2, ExternalLink, Info, Settings, Loader2, Heart } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
@@ -504,9 +504,14 @@ export default function MetalDetectorPage() {
       {/* Header */}
       <header className="bg-black/80 backdrop-blur-md border-b border-zinc-700/50 shadow-lg shadow-black/50">
         <div className="max-w-7xl mx-auto p-4 flex items-center gap-3">
-          <div className="bg-gradient-to-br from-zinc-700 via-zinc-500 to-zinc-400 p-3 rounded-xl shadow-lg shadow-zinc-800/50">
-            <Music className="w-6 h-6 text-black" />
-          </div>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={`${process.env.NEXT_PUBLIC_BASE_PATH || ""}/logo.svg`}
+            alt="Metal Detector Logo"
+            width={56}
+            height={56}
+            className="w-14 h-14 drop-shadow-[0_2px_8px_rgba(226,178,74,0.35)]"
+          />
           <div>
             <h1 className="text-2xl font-bold bg-gradient-to-r from-zinc-100 via-zinc-300 to-zinc-400 bg-clip-text text-transparent">
               Metal Detector

@@ -1,5 +1,5 @@
 // Simple offline cache: network first, fall back to cache.
-const CACHE = "metal-detector-v1"
+const CACHE = "metal-detector-v2"
 
 self.addEventListener("install", (event) => {
   const scope = self.registration.scope
