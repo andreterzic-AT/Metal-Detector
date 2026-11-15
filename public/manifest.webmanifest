@@ -2,7 +2,7 @@
   "name": "Metal Detector",
   "short_name": "Metal Detector",
   "description": "Profil-basierte Metal-Musik-Analyse",
-  "start_url": "./",
+  "start_url": "./app/",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
