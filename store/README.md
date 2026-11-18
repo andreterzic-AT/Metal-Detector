@@ -48,7 +48,7 @@ Kein Konto, keine Werbung, kein Tracking. Dein Profil, deine Merkliste und deine
 HINWEIS
 Band-Profile werden automatisch aus öffentlichen Quellen geschätzt und sind eine Orientierungshilfe. Bandnamen dienen nur der Beschreibung; der Metal Detector steht in keiner Verbindung zu den genannten Bands.
 
-Fragen oder Ideen? Schreib uns: info@at-teamtools.de
+Fragen oder Ideen? Schreib uns: info@at-metaldetector.de
 ```
 
 > E-Mail-Adresse am Ende ggf. anpassen – sie muss erreichbar sein.
