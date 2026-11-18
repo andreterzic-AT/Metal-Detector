@@ -6,6 +6,6 @@ export const PROVIDER = {
   city: "65510 Hünstetten",
   country: "Deutschland",
   phone: "+49 176 61938094",
-  email: "andre.terzic@icloud.com",
+  email: "info@at-metaldetector.de",
   updated: "15.11.2026",
 }
