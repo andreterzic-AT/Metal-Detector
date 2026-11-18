@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "de.atteamtools.metaldetector",
+      "sha256_cert_fingerprints": [
+        "CC:8B:FE:E5:27:01:2D:5A:1F:DE:C2:7E:0A:CC:DA:56:11:78:DC:1B:90:6E:3D:9F:45:5D:71:2D:C2:7C:FD:93"
+      ]
+    }
+  }
+]
