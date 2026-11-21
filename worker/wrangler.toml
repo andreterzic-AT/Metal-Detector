@@ -14,6 +14,8 @@ ALLOWED_ORIGINS = "https://at-metaldetector.de,https://www.at-metaldetector.de,h
 # Eine Chat-Nachricht braucht je nach Werkzeugen 1–4 Anfragen.
 DAILY_BUDGET = "1000"
 OPUS_COST = "25"
+# KI-Bandsuche: Perplexity Agent API, wenn das Secret PERPLEXITY_API_KEY gesetzt ist, sonst Claude Haiku.
+# BAND_PROVIDER = "anthropic" erzwingt Claude.
 # Eine KI-Bandsuche (Websuche, ca. 1-3 Cent) zählt so viele Einheiten. Bereits recherchierte Bands kosten nichts.
 BAND_COST = "20"
 
