@@ -1,7 +1,9 @@
 import Anthropic from "@anthropic-ai/sdk"
+import Perplexity from "@perplexity-ai/perplexity_ai"
 import { DurableObject } from "cloudflare:workers"
 import { AI_LIMITS, AI_MODELS, AI_TOOLS, SYSTEM_PROMPT, type AiModelKey } from "../../lib/ai-tools"
 import { researchBand, type BandResearch } from "./band-research"
+import { researchBandPerplexity } from "./band-research-perplexity"
 
 /*
  * Metal Detector – KI-Server (Cloudflare Worker)
@@ -22,6 +24,10 @@ export interface Env {
   ANTHROPIC_API_KEY: string
   /** Nur für lokale Tests: anderer Anthropic-Server */
   ANTHROPIC_BASE_URL?: string
+  /** Optional: Perplexity-Schlüssel für die KI-Bandsuche (Websuche mit Quellen) */
+  PERPLEXITY_API_KEY?: string
+  /** Wer recherchiert Bands: "perplexity" (Standard, wenn Schlüssel vorhanden) oder "anthropic" */
+  BAND_PROVIDER?: string
   ALLOWED_ORIGINS: string
   /** Tageslimit in "Einheiten": eine Haiku-Anfrage = 1, eine Opus-Anfrage = OPUS_COST */
   DAILY_BUDGET: string
@@ -137,7 +143,8 @@ export default {
     const isBand = url.pathname === "/band"
     if (request.method !== "POST" || !(isBand || ["/", "/chat", "/chat/"].includes(url.pathname))) return json({ error: "Nicht gefunden" }, 404, cors)
     if (!cors["Access-Control-Allow-Origin"]) return json({ error: "Herkunft nicht erlaubt" }, 403, {})
-    if (!env.ANTHROPIC_API_KEY) return json({ error: "Server nicht eingerichtet (API-Schlüssel fehlt)" }, 500, cors)
+    const configured = isBand ? Boolean(env.ANTHROPIC_API_KEY || env.PERPLEXITY_API_KEY) : Boolean(env.ANTHROPIC_API_KEY)
+    if (!configured) return json({ error: "Server nicht eingerichtet (API-Schlüssel fehlt)" }, 500, cors)
 
     // 1. Begrenzung pro Nutzer
     const ip = request.headers.get("CF-Connecting-IP") ?? "unknown"
@@ -204,6 +211,16 @@ function apiError(error: unknown, cors: Record<string, string>): Response {
   if (error instanceof Anthropic.APIError) {
     return json({ error: "upstream", message: `KI-Fehler ${error.status ?? ""}` }, 502, cors)
   }
+  if (error instanceof Perplexity.AuthenticationError || error instanceof Perplexity.PermissionDeniedError) {
+    // 403 auch, wenn das Perplexity-Konto kein bezahltes Guthaben mehr hat
+    return json({ error: "server-key", message: "Der Perplexity-Schlüssel auf dem Server ist ungültig oder ohne Guthaben." }, 502, cors)
+  }
+  if (error instanceof Perplexity.RateLimitError) {
+    return json({ error: "busy", message: "Die KI ist gerade ausgelastet – versuch es gleich nochmal." }, 503, cors)
+  }
+  if (error instanceof Perplexity.APIError) {
+    return json({ error: "upstream", message: `KI-Fehler ${error.status ?? ""}` }, 502, cors)
+  }
   return json({ error: "upstream", message: "KI nicht erreichbar" }, 502, cors)
 }
 
@@ -230,9 +247,8 @@ async function handleBand(request: Request, env: Env, cors: Record<string, strin
   const spent = await budget.spend(Number(env.BAND_COST || 20), Number(env.DAILY_BUDGET || 1000))
   if (!spent.ok) return json({ error: "daily-limit", message: "Das KI-Tageslimit ist erreicht." }, 429, cors)
 
-  const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY, baseURL: env.ANTHROPIC_BASE_URL || undefined, maxRetries: 1 })
   try {
-    const result = await researchBand(client, name)
+    const result = await runBandResearch(env, name)
     // Nur speichern, wenn wirklich etwas Brauchbares herauskam (oder sicher nichts existiert)
     if (!result.found || Object.keys(result.profile).length >= 5) await cache.write(key, result)
     return json({ ...result, cached: false }, 200, cors)
@@ -241,5 +257,25 @@ async function handleBand(request: Request, env: Env, cors: Record<string, strin
       return json({ error: "no-result", message: "Die KI konnte zu dieser Band nichts Verlässliches finden." }, 502, cors)
     }
     return apiError(error, cors)
+  }
+}
+
+/**
+ * Perplexity recherchiert, wenn ein Schlüssel hinterlegt ist (und BAND_PROVIDER nicht "anthropic").
+ * Schlägt Perplexity fehl und ist ein Anthropic-Schlüssel da, übernimmt Claude Haiku.
+ */
+async function runBandResearch(env: Env, name: string): Promise<BandResearch> {
+  const anthropic = () =>
+    researchBand(new Anthropic({ apiKey: env.ANTHROPIC_API_KEY, baseURL: env.ANTHROPIC_BASE_URL || undefined, maxRetries: 1 }), name)
+  const usePerplexity = Boolean(env.PERPLEXITY_API_KEY) && (env.BAND_PROVIDER ?? "perplexity") !== "anthropic"
+  if (!usePerplexity) return anthropic()
+
+  try {
+    // Wiederholt 429/5xx selbst (beachtet Retry-After)
+    return await researchBandPerplexity(new Perplexity({ apiKey: env.PERPLEXITY_API_KEY, maxRetries: 1 }), name)
+  } catch (error) {
+    if (!env.ANTHROPIC_API_KEY) throw error
+    console.warn("Perplexity-Bandsuche fehlgeschlagen, nehme Claude:", error instanceof Error ? error.message : error)
+    return anthropic()
   }
 }

@@ -2,17 +2,19 @@ import Anthropic from "@anthropic-ai/sdk"
 import { profileSections } from "../../lib/profile"
 
 /*
- * KI-Bandsuche: Für Bands, die Wikipedia/Wikidata nicht kennen, recherchiert Claude Haiku
- * im Web (höchstens 3 Suchen) und füllt das Profil der App aus.
- * Das Ergebnis kommt über das Werkzeug "submit_band_profile" mit festem Schema zurück.
+ * KI-Bandsuche: Für Bands, die Wikipedia/Wikidata nicht kennen, recherchiert eine KI
+ * im Web und füllt das Profil der App aus.
+ *   - Claude Haiku (diese Datei): Ergebnis über das Werkzeug "submit_band_profile"
+ *   - Perplexity Agent API (band-research-perplexity.ts): Ergebnis als JSON nach demselben Schema
+ * Auftrag (Prompt), Schema und Aufbereitung (clean) sind für beide gleich.
  */
 
 export const RESEARCH_MODEL = "claude-haiku-5-5"
-const MAX_SEARCHES = 3
+export const MAX_SEARCHES = 3
 const MAX_ROUNDS = 3
 
 const sliders = profileSections.flatMap((s) => s.sliders)
-const PROFILE_KEYS = sliders.map((s) => s.key)
+export const PROFILE_KEYS = sliders.map((s) => s.key)
 
 export type BandResearch = {
   found: boolean
@@ -27,12 +29,13 @@ export type BandResearch = {
   sources: { title: string; url: string }[]
 }
 
-const SYSTEM = `You research bands and music artists (mostly metal and rock) for a German music app.
+/** Auftrag für die Recherche. `submit` sagt, wie das Ergebnis abgegeben wird (Werkzeug oder JSON). */
+export const researchInstructions = (submit: string) => `You research bands and music artists (mostly metal and rock) for a German music app.
 
-Given a name, use web_search (at most ${MAX_SEARCHES} searches) to find reliable information: official sites, Bandcamp, Metal Archives, interviews, reviews, label pages. Then call submit_band_profile exactly once.
+Given a name, use web_search (at most ${MAX_SEARCHES} searches) to find reliable information: official sites, Bandcamp, Metal Archives, interviews, reviews, label pages. Then ${submit}.
 
 Rules:
-- If several artists share the name, choose the metal/rock one. If you cannot find a band or artist with this name at all, call submit_band_profile with found=false and empty or -1 values.
+- If several artists share the name, choose the metal/rock one. If you cannot find a band or artist with this name at all, submit found=false with empty or -1 values.
 - Never invent facts. If you are unsure about something, leave text fields empty and use -1 for profile values.
 - description: 1-3 short sentences in German (origin, style, what makes them special).
 - country: German country name (e.g. "Schweden"), or "".
@@ -45,31 +48,36 @@ Rules:
 Profile properties:
 ${sliders.map((s) => `- ${s.key}: ${s.label}${s.question ? ` (${s.question})` : ""}`).join("\n")}`
 
+const SYSTEM = researchInstructions("call submit_band_profile exactly once")
+
+/** JSON-Schema des Ergebnisses (für das Claude-Werkzeug und für Perplexitys response_format) */
+export const BAND_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["found", "name", "country", "since", "genres", "description", "themes", "spotify_url", "profile"],
+  properties: {
+    found: { type: "boolean", description: "false if no band/artist with this name could be found" },
+    name: { type: "string", description: "Official spelling of the name" },
+    country: { type: "string" },
+    since: { type: "string" },
+    genres: { type: "array", items: { type: "string" } },
+    description: { type: "string" },
+    themes: { type: "array", items: { type: "string" } },
+    spotify_url: { type: "string" },
+    profile: {
+      type: "object",
+      additionalProperties: false,
+      required: PROFILE_KEYS,
+      properties: Object.fromEntries(PROFILE_KEYS.map((k) => [k, { type: "integer", description: "0-10, or -1 if unknown" }])),
+    },
+  },
+}
+
 const SUBMIT_TOOL = {
   name: "submit_band_profile",
   description: "Submit the researched band profile. Call exactly once at the end.",
   strict: true,
-  input_schema: {
-    type: "object",
-    additionalProperties: false,
-    required: ["found", "name", "country", "since", "genres", "description", "themes", "spotify_url", "profile"],
-    properties: {
-      found: { type: "boolean", description: "false if no band/artist with this name could be found" },
-      name: { type: "string", description: "Official spelling of the name" },
-      country: { type: "string" },
-      since: { type: "string" },
-      genres: { type: "array", items: { type: "string" } },
-      description: { type: "string" },
-      themes: { type: "array", items: { type: "string" } },
-      spotify_url: { type: "string" },
-      profile: {
-        type: "object",
-        additionalProperties: false,
-        required: PROFILE_KEYS,
-        properties: Object.fromEntries(PROFILE_KEYS.map((k) => [k, { type: "integer", description: "0-10, or -1 if unknown" }])),
-      },
-    },
-  },
+  input_schema: BAND_SCHEMA,
 }
 
 type Block = { type: string; [key: string]: unknown }
@@ -83,7 +91,7 @@ function collectSources(content: Block[], into: Map<string, string>) {
   }
 }
 
-function clean(input: Record<string, unknown>, sources: Map<string, string>): BandResearch {
+export function clean(input: Record<string, unknown>, sources: Map<string, string>): BandResearch {
   const str = (v: unknown, max = 400) => (typeof v === "string" ? v.trim().slice(0, max) : "")
   const list = (v: unknown, n: number) =>
     Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && x.trim() !== "").map((x) => x.trim().slice(0, 60)).slice(0, n) : []

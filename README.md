@@ -59,6 +59,12 @@ Die App läuft kostenlos auf **GitHub Pages**, erscheint aber unter einer eigene
 Erlaubte Seiten für den KI-Server stehen in `worker/wrangler.toml` (`ALLOWED_ORIGINS`), das
 Tageslimit ebenda (`DAILY_BUDGET`).
 
+**KI-Bandsuche mit Perplexity (optional):** Mit dem GitHub-Secret `PERPLEXITY_API_KEY` recherchiert die
+**Perplexity Agent API** unbekannte Bands (Websuche mit Quellen, Ergebnis als JSON). Schlüssel unter
+console.perplexity.ai erstellen – die Agent API braucht **bezahltes Guthaben** (Pro/Max-Abo zählt nicht).
+Schlägt Perplexity fehl, übernimmt Claude Haiku. Ohne den Schlüssel recherchiert wie bisher Claude.
+`BAND_PROVIDER = "anthropic"` in `worker/wrangler.toml` (`[vars]`) schaltet Perplexity aus. Der Chat nutzt weiter Claude.
+
 ## Alternative: Veröffentlichen auf IONOS-Webhosting (nur mit Webspace, nicht mit „Hosting für WordPress“)
 
 Die App und der KI-Server laufen auf dem eigenen IONOS-Webhosting:
